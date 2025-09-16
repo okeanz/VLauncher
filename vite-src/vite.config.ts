@@ -4,4 +4,20 @@ import react from "@vitejs/plugin-react-swc";
 // https://vitejs.dev/config/
 export default defineConfig({
 	plugins: [react()],
+	resolve: {
+		alias: {
+			'@': '/src',
+		},
+	},
+	optimizeDeps: {
+		include: [
+			'@reduxjs/toolkit',
+			'@mantine/core',
+			'@tabler/icons-react',
+			'react-redux',
+			'react-error-boundary',
+			'react-router-dom',
+			'react-dom/client',
+		],
+	},
 });

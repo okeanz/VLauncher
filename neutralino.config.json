@@ -11,11 +11,15 @@
   "singlePageServe": true,
   "modes": {
     "window": {
-      "title": "myapp",
+      "title": "VLauncher",
       "width": 800,
-      "height": 500,
-      "minWidth": 400,
-      "minHeight": 200,
+      "height": 600,
+      "maxHeight": 600,
+      "maxWidth": 800,
+      "minHeight": 600,
+      "minWidth": 800,
+      "exitProcessOnClose": true,
+      "resizable": false,
       "icon": "/vite-src/public/neutralino.png",
       "enableInspector": true
     }
