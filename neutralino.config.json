@@ -7,7 +7,7 @@
   "port": 3000,
   "enableServer": true,
   "enableNativeAPI": true,
-  "nativeAllowList": ["app.*", "filesystem.readDirectory"],
+  "nativeAllowList": ["app.*", "filesystem.*", "os.*", "debug.*"],
   "singlePageServe": true,
   "modes": {
     "window": {
@@ -21,11 +21,11 @@
       "exitProcessOnClose": true,
       "resizable": false,
       "icon": "/vite-src/public/icon.png",
-      "enableInspector": true
+      "enableInspector": false
     }
   },
   "cli": {
-    "binaryName": "myapp",
+    "binaryName": "VLauncher",
     "resourcesPath": "/vite-src/dist/",
     "extensionsPath": "/extensions/",
     "binaryVersion": "6.2.0",

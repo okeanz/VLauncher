@@ -5,12 +5,32 @@ import '@mantine/core/styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'tailwindcss/tailwind.css';
+import { app, init, events } from '@neutralinojs/lib';
+import { getSteamPath } from '@/utils/get-steam-path.ts';
+import { getValheimPath } from '@/utils/get-valheim-path.ts';
+import { log } from '@/utils/log.ts';
+import { store } from '@/shared/store';
+import { setValheimPath } from '@/features/settings/settings.slice.ts';
 
-// eslint-disable-next-line unicorn/prefer-query-selector,@typescript-eslint/no-non-null-assertion
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AppProvider>
-      <AppRoutes />
-    </AppProvider>
-  </StrictMode>,
-);
+init();
+
+events.on('windowClose', () => app.exit());
+
+const start = async () => {
+  const steamPath = await getSteamPath();
+  log(steamPath);
+  const gamePath = await getValheimPath(steamPath);
+  log(gamePath);
+  return gamePath;
+};
+
+start().then((res) => {
+  store.dispatch(setValheimPath(res));
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <AppProvider>
+        <AppRoutes />
+      </AppProvider>
+    </StrictMode>,
+  );
+});

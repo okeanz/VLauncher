@@ -1,4 +1,3 @@
-import { CounterPage } from '@/pages/CounterPage';
 import { AppShell, Container } from '@mantine/core';
 import { useRoutes } from 'react-router-dom';
 import MainPage from '@/pages/main-page.tsx';
@@ -9,10 +8,6 @@ export function AppRoutes() {
     {
       path: '/',
       element: <MainPage />,
-    },
-    {
-      path: '/counter',
-      element: <CounterPage />,
     },
   ];
 

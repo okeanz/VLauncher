@@ -39,6 +39,7 @@ type AppProviderProps = {
 };
 
 export function AppProvider({ children }: AppProviderProps) {
+
   return (
     <React.Suspense fallback={<div>Loading...</div>}>
       <Provider store={store}>
