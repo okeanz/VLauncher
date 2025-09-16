@@ -20,7 +20,7 @@
       "minWidth": 800,
       "exitProcessOnClose": true,
       "resizable": false,
-      "icon": "/vite-src/public/neutralino.png",
+      "icon": "/vite-src/public/icon.png",
       "enableInspector": true
     }
   },
