@@ -1,6 +1,7 @@
 # Neutralinojs + Vite + React + Typescript
 A simple [React](https://react.dev/) template for building [Neutralinojs](https://neutralino.js.org/) apps with [Vite](https://vitejs.dev/) as bundler and [Typescript](https://www.typescriptlang.org/)
 
+valheim_Data -> Boot.Config
 gfx-enable-gfx-jobs=1
 gfx-enable-native-gfx-jobs=1
 vr-enabled=0

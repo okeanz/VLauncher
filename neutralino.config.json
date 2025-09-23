@@ -21,7 +21,7 @@
       "exitProcessOnClose": true,
       "resizable": false,
       "icon": "/vite-src/public/icon.png",
-      "enableInspector": false
+      "enableInspector": true
     }
   },
   "cli": {

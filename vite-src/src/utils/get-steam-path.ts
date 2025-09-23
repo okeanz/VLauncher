@@ -13,10 +13,10 @@ export async function getSteamPath() {
         return match[1].trim();
       }
     }
-    return null;
+    return '';
   } catch (err) {
     debug.log(`Ошибка чтения реестра: ${JSON.stringify(err)}`);
     console.log(`Ошибка чтения реестра: ${JSON.stringify(err)}`);
-    return null;
+    return '';
   }
 }

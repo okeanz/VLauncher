@@ -1,9 +1,10 @@
 import Neutralino from '@neutralinojs/lib';
 import { log } from '@/utils/log.ts';
+import { normalizePath } from '@/utils/normalize-path.ts';
 
-export const getValheimPath = async (steamPath: string | null) => {
+export const getValheimPath = async (steamPath: string | null): Promise<string> => {
   if (!steamPath) {
-    return null;
+    return '';
   }
   try {
     // Путь к файлу libraryfolders.vdf
@@ -14,7 +15,7 @@ export const getValheimPath = async (steamPath: string | null) => {
     if (!exists) {
       log(`Файл libraryfolders.vdf не найден:: ${vdfPath}`);
       console.error('Файл libraryfolders.vdf не найден:', vdfPath);
-      return null;
+      return '';
     }
 
     // Читаем содержимое
@@ -33,19 +34,22 @@ export const getValheimPath = async (steamPath: string | null) => {
       try {
         await Neutralino.filesystem.readFile(manifestPath);
         // Если файл существует, значит Valheim установлен тут
-        const gamePath = `${libPath}\\steamapps\\common\\Valheim`;
+        const gamePath = normalizePath(`${libPath}\\steamapps\\common\\Valheim`);
 
         // Проверим саму папку игры
         await Neutralino.filesystem.readDirectory(gamePath);
+
+        // return '';
         return gamePath;
-      } catch {
-        // просто идем дальше
+      } catch (err) {
+        log(`Ошибка при поиске Valheim: ${(err as Error).message}`);
+        return '';
       }
     }
 
-    return null;
+    return '';
   } catch (err) {
     log(`Ошибка при поиске Valheim: ${(err as Error).message}`);
-    return null;
+    return '';
   }
 };

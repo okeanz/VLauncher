@@ -10,7 +10,7 @@ import { getSteamPath } from '@/utils/get-steam-path.ts';
 import { getValheimPath } from '@/utils/get-valheim-path.ts';
 import { log } from '@/utils/log.ts';
 import { store } from '@/shared/store';
-import { setValheimPath } from '@/features/settings/settings.slice.ts';
+import { setValheimPath } from '@/features/settings/settings.actions.ts';
 
 init();
 
@@ -26,6 +26,7 @@ const start = async () => {
 
 start().then((res) => {
   store.dispatch(setValheimPath(res));
+
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <AppProvider>

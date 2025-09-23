@@ -1,44 +1,20 @@
-import { Button, Card, Text, Container, Stack, Center } from '@mantine/core';
-import { IconPlayerPlay } from '@tabler/icons-react';
-import { useSelector } from 'react-redux';
-import { valheimPathSelector } from '@/features/settings/settings.slice.ts';
-import { launchValheim } from '@/utils/launch-valheim.ts';
+import { Container, Stack, Center } from '@mantine/core';
+import { ValheimPath } from '@/components/valheim-path.tsx';
+import { ServerCheck } from '@/components/server-check.tsx';
+import { ValheimLaunch } from '@/components/valheim-launch.tsx';
+import { LoadingBar } from '@/components/loading-bar.tsx';
 
 export default function MainPage() {
-  const valheimPath = useSelector(valheimPathSelector);
-
-  const handleLaunch = () => valheimPath && launchValheim(valheimPath);
-
   return (
-    <Container size="md" py="md" h="90vh" style={{ justifyContent: 'flex-end' }}>
-      <Stack gap="lg" h="90vh" justify="flex-end">
-        {/* Прогресс-бар */}
-        {/*<Card shadow="sm" p="md" radius="md" withBorder>
-          <Text size="sm" mb="xs">
-            Загрузка обновлений
-          </Text>
-          <Progress value={progress} size="lg" striped animated />
-        </Card>*/}
+    <Container size="md" py="md" h="85vh" style={{ justifyContent: 'flex-end' }}>
+      <ServerCheck />
+      <Stack gap="lg" h="85vh" justify="flex-end">
+        <ValheimPath />
 
-        <Card>
-          <Text size="sm" mb="xs">
-            Обнаружен путь до установленной копии Valheim:
-          </Text>
-          <Text size="sm" mb="xs">
-            {valheimPath}
-          </Text>
-        </Card>
+        <LoadingBar />
 
-        {/* Кнопка запуска */}
         <Center mt="md">
-          <Button
-            onClick={handleLaunch}
-            size="xl"
-            disabled={!valheimPath}
-            leftSection={<IconPlayerPlay size={20} />}
-          >
-            Запустить Valheim
-          </Button>
+          <ValheimLaunch />
         </Center>
       </Stack>
     </Container>
