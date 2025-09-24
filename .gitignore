@@ -27,6 +27,8 @@ dist
 distExt
 dist-ssr
 *.local
+cache
+extensions
 
 # Editor directories and files
 .vscode/*
