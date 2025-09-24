@@ -7,12 +7,12 @@
   "port": 3000,
   "enableServer": true,
   "enableNativeAPI": true,
-  "nativeAllowList": ["app.*", "filesystem.*", "os.*", "debug.*", "storage.*", "extensions.*"],
+  "nativeAllowList": ["app.*", "filesystem.*", "os.*", "debug.*", "storage.*", "extensions.*", "events.*"],
   "singlePageServe": true,
   "enableExtensions": true,
   "extensions": [{
     "id": "fileLoader",
-    "command": "node ${NL_PATH}/extensions/extension.js"
+    "command": "node --env-file=vite-src/.env ${NL_PATH}/extensions/extension.js"
   }],
   "modes": {
     "window": {

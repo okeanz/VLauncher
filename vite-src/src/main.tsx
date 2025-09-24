@@ -16,7 +16,22 @@ import { loadArchives } from '@/shared/actions/load-archives.ts';
 
 init();
 
-events.on('windowClose', () => app.exit());
+await events.on('windowClose', async () => {
+  console.log('Window Closed');
+  await app.exit();
+});
+await events.on('broadcast', (ev) => {
+  console.log('Broadcast', ev.detail);
+});
+await events.on('extensionToApp', (ev) => {
+  console.log('extensionToApp', ev.detail);
+});
+await events.on('extensionReady', (ev) => {
+  console.log('extensionReady', ev.detail);
+});
+await events.on('extClientConnect', (ev) => {
+  console.log('extClientConnect', ev.detail);
+});
 
 const start = async () => {
   try {

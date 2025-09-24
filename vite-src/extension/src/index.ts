@@ -1,8 +1,8 @@
 import fs from 'fs';
 import process from 'process';
 
-import { setupWs } from './setupWs';
-import { logInfo } from './logger';
+import { setupWs } from './utils/setup-ws.ts';
+import { logInfo } from './utils/logger.ts';
 
 logInfo('Starting extension...');
 logInfo('Awaiting input...');
