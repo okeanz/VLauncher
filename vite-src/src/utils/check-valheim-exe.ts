@@ -1,5 +1,5 @@
 import { filesystem } from '@neutralinojs/lib';
-import {logError} from "@/utils/log.ts";
+import {logError} from "@/utils/logInfo.ts";
 
 export const checkValheimExe = async (directoryPath: string) => {
   try {

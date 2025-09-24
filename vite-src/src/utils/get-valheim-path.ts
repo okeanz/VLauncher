@@ -1,5 +1,5 @@
 import Neutralino from '@neutralinojs/lib';
-import { log } from '@/utils/log.ts';
+import { logInfo } from '@/utils/logInfo.ts';
 import { normalizePath } from '@/utils/normalize-path.ts';
 
 export const getValheimPath = async (steamPath: string | null): Promise<string> => {
@@ -13,7 +13,7 @@ export const getValheimPath = async (steamPath: string | null): Promise<string> 
     // Проверяем, что файл существует
     const exists = await Neutralino.filesystem.readFile(vdfPath).catch((err) => console.log(err));
     if (!exists) {
-      log(`Файл libraryfolders.vdf не найден:: ${vdfPath}`);
+      logInfo(`Файл libraryfolders.vdf не найден:: ${vdfPath}`);
       console.error('Файл libraryfolders.vdf не найден:', vdfPath);
       return '';
     }
@@ -42,14 +42,14 @@ export const getValheimPath = async (steamPath: string | null): Promise<string> 
         // return '';
         return gamePath;
       } catch (err) {
-        log(`Ошибка при поиске Valheim: ${(err as Error).message}`);
+        logInfo(`Ошибка при поиске Valheim: ${(err as Error).message}`);
         return '';
       }
     }
 
     return '';
   } catch (err) {
-    log(`Ошибка при поиске Valheim: ${(err as Error).message}`);
+    logInfo(`Ошибка при поиске Valheim: ${(err as Error).message}`);
     return '';
   }
 };

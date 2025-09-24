@@ -1,4 +1,4 @@
-import { log } from '@/utils/log.ts';
+import { logInfo } from '@/utils/logInfo.ts';
 import Neutralino from '@neutralinojs/lib';
 
 export async function launchValheim(gamePath: string) {
@@ -8,10 +8,10 @@ export async function launchValheim(gamePath: string) {
 
     // запускаем процесс
     const proc = await Neutralino.os.spawnProcess(exePath);
-    log(`Valheim запущен. PID: ${proc.id}`);
+    logInfo(`Valheim запущен. PID: ${proc.id}`);
     return proc.id;
   } catch (err) {
-    log(`Ошибка запуска Valheim: ${(err as Error).message}`);
+    logInfo(`Ошибка запуска Valheim: ${(err as Error).message}`);
     return null;
   }
 }
