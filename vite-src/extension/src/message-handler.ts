@@ -13,6 +13,7 @@ export const messageHandler = async (e: IMessageEvent) => {
       send({ test: 123 });
       logInfo(`Processing LoadFiles...`);
 
+      // Загружаем и распаковываем архивы
       await fetchArchive('patchers');
       await fetchArchive('config');
       await fetchArchive('BepInEx');

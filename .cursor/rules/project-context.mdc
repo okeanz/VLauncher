@@ -1,0 +1,41 @@
+---
+description: "Контекст проекта VLauncher - лаунчер модов для Valheim"
+alwaysApply: true
+---
+
+# VLauncher - Valheim Mod Launcher
+
+## Описание проекта
+VLauncher - это десктопное приложение для управления модами игры Valheim, построенное на основе Neutralino.js с React frontend.
+
+## Архитектура
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS + Mantine UI
+- **Backend**: Neutralino.js extension (Node.js)
+- **State Management**: Redux Toolkit
+- **Routing**: React Router v7
+- **Архивы**: ZIP файлы (adm-zip, archiver)
+- **Стили**: Tailwind CSS + Mantine компоненты
+
+## Структура проекта
+```
+vite-src/
+├── src/                    # React frontend
+│   ├── components/         # React компоненты
+│   ├── pages/             # Страницы приложения
+│   ├── features/          # Redux slices и actions
+│   ├── hooks/             # Custom React hooks
+│   ├── utils/             # Утилиты frontend
+│   └── shared/            # Общие сервисы и store
+└── extension/             # Neutralino extension
+    └── src/
+        ├── api/           # API endpoints
+        ├── handlers/      # Обработчики запросов
+        └── utils/         # Backend утилиты
+```
+
+## Основной функционал
+- Управление модами Valheim
+- Загрузка и установка модов из ZIP архивов
+- Проверка статуса сервера
+- Запуск игры Valheim
+- Настройки приложения
