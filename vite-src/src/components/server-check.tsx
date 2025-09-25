@@ -1,5 +1,5 @@
 import { Card, Group, Indicator, Text } from '@mantine/core';
-import { useFileServerCheck } from '@/hooks/use-file-server-check.ts';
+import { useFileServerCheck } from '@/hooks/use-file-server-check';
 
 export const ServerCheck = () => {
   const status = useFileServerCheck();

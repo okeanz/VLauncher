@@ -51,9 +51,9 @@ const start = async () => {
   }
 };
 
-start().then((res) => {
-  store.dispatch(setValheimPath(res));
-  store.dispatch(loadArchives());
+start().then(async (res) => {
+  await store.dispatch(setValheimPath(res));
+  await store.dispatch(loadArchives());
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

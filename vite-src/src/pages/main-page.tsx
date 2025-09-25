@@ -1,5 +1,6 @@
 import { Container, Stack, Center } from '@mantine/core';
 import { ValheimPath } from '@/components/valheim-path.tsx';
+import { ValheimOptimization } from '@/components/valheim-optimization.tsx';
 import { ServerCheck } from '@/components/server-check.tsx';
 import { ValheimLaunch } from '@/components/valheim-launch.tsx';
 import { LoadingBar } from '@/components/loading-bar.tsx';
@@ -10,6 +11,7 @@ export default function MainPage() {
       <ServerCheck />
       <Stack gap="lg" h="85vh" justify="flex-end">
         <ValheimPath />
+        <ValheimOptimization />
 
         <LoadingBar />
 

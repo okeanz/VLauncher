@@ -1,0 +1,61 @@
+---
+description: "Правила для Redux и инициализации приложения"
+globs: ["vite-src/src/**/*.ts", "vite-src/src/**/*.tsx"]
+alwaysApply: true
+---
+
+# Redux и Инициализация
+
+## Thunk Actions
+- Создавай отдельные thunk actions для инициализации настроек
+- Передавай параметры напрямую в thunk, если они могут быть недоступны в state
+- Thunk могут читать из state только если данные там гарантированно есть
+- Используй существующие actions вместо дублирования логики
+- Инициализация должна происходить в thunk actions, а не в хуках
+
+## Инициализация приложения
+- Инициализация настроек должна происходить после установки валидного пути
+- Вызывай инициализацию из основного thunk action (например, setValheimPath)
+- Проверяй валидность данных перед инициализацией
+- Синхронизируй состояние с реальными файлами при старте
+
+## WebSocket события
+- Используй `extensions.dispatch` для отправки событий в extension
+- НЕ пытайся получить ответ от `extensions.dispatch`
+- Отправляй события только при необходимости (например, если настройка включена)
+- Обрабатывай ошибки отправки событий
+
+## Состояние и Storage
+- Храни настройки в `neutralino.storage`
+- Синхронизируй Redux state с реальными файлами
+- Проверяй реальное состояние файлов, а не только storage
+- Используй fallback значения при ошибках
+
+## Архитектура инициализации
+```typescript
+// Правильно - передаем параметр напрямую (может быть недоступен в state):
+export const initializeSettings = createAsyncThunk(
+  'settings/initializeSettings',
+  async (valheimPath: string, { dispatch }) => {
+    // Используем переданный параметр
+  }
+);
+
+// Правильно - читаем из state (данные гарантированно есть):
+export const someAction = createAsyncThunk(
+  'settings/someAction',
+  async (_, { getState }) => {
+    const state = getState() as RootState;
+    const existingData = state.settings.someData; // Гарантированно есть
+  }
+);
+
+// Неправильно - читаем из state данные которые могут отсутствовать:
+export const badAction = createAsyncThunk(
+  'settings/badAction',
+  async (_, { getState }) => {
+    const state = getState() as RootState;
+    const maybeData = state.settings.maybeData; // Может быть undefined
+  }
+);
+```
