@@ -1,8 +1,9 @@
 import fs from 'fs';
 import process from 'process';
 
-import { setupWs } from './utils/setup-ws.ts';
+import { setupWs } from './websocket/setup-ws.ts';
 import { logInfo } from './utils/logger.ts';
+import { registerExitEvents } from './on-exit.js';
 
 logInfo('Starting extension...');
 logInfo('Awaiting input...');
@@ -18,3 +19,5 @@ const NL_EXTID = processInput.nlExtensionId;
 logInfo(`input: ${JSON.stringify(processInput)}`);
 
 setupWs({ NL_PORT, NL_TOKEN, NL_EXTID, NL_CTOKEN });
+
+registerExitEvents();

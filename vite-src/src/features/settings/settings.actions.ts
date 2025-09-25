@@ -14,7 +14,7 @@ export const setValheimPath = createAsyncThunk(
       await storage.setData(gamePathKey, directoryPath);
       
       // Инициализируем настройки только если путь валидный
-      await dispatch(initializeSettings(directoryPath));
+      dispatch(initializeSettings(directoryPath));
     }
 
     return {

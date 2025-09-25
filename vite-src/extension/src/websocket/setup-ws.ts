@@ -1,8 +1,9 @@
-import { logError, logInfo } from './logger.ts';
+import { logError, logInfo } from '../utils/logger.ts';
 import process from 'process';
 import { w3cwebsocket as WS } from 'websocket';
 import { messageHandler } from '../message-handler.ts';
 import { v4 as uuidv4 } from 'uuid/dist/index.js';
+import {startHeartbeat, stopHeartbeat} from "./heartbeat.js";
 
 type setupWsParams = {
   NL_PORT: string;
@@ -11,21 +12,34 @@ type setupWsParams = {
   NL_TOKEN: string;
 };
 
-let client: WS;
+export let client: WS;
 let accessToken: string;
 
 export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParams) => {
   try {
-    client = new WS(`ws://localhost:${NL_PORT}?extensionId=${NL_EXTID}&connectToken=${NL_CTOKEN}`);
+    client = new WS(
+        `ws://localhost:${NL_PORT}?extensionId=${NL_EXTID}&connectToken=${NL_CTOKEN}`
+    );
     accessToken = NL_TOKEN;
 
-    logInfo('START');
+    logInfo("START");
 
-    client.onerror = () => logInfo('Connection error!');
-    client.onopen = () => logInfo('Connected');
+
+    client.onopen = () => {
+      logInfo("Connected");
+      startHeartbeat(client);
+    };
+
     client.onclose = () => {
-      logInfo('Connection closed!');
-      process.exit();
+      logInfo("Connection closed!");
+      stopHeartbeat();
+      process.exit(0);
+    };
+
+    client.onerror = () => {
+      logInfo("Connection error!");
+      stopHeartbeat();
+      process.exit(0);
     };
 
     client.onmessage = messageHandler;
@@ -33,6 +47,7 @@ export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParam
     logError(e);
   }
 };
+
 
 export const makeSend =
   (event: 'extensionToApp' | 'log' = 'extensionToApp') =>
@@ -51,5 +66,7 @@ export const makeSend =
       });
 
       client.send(msg);
-    } catch {}
+    } catch {
+      /* empty */
+    }
   };

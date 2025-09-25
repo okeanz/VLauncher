@@ -1,7 +1,14 @@
 import { checkFile } from '../utils/check-file.js';
 import { logError, logInfo } from '../utils/logger.js';
+import {
+  sendOperationStart,
+  sendOperationComplete,
+  sendOperationError,
+  sendProgressUpdate,
+} from '../ws-events/progress-events.js';
 import { getFile, getFileChecksum } from '../api/files.js';
 import { pipeline } from 'stream/promises';
+import { PassThrough } from 'stream';
 import fs from 'fs';
 import { extractArchive } from '../utils/extract-archive.js';
 import { cleanDirectory } from '../utils/clean-directory.js';
@@ -14,6 +21,12 @@ export const fetchArchive = async (archiveName: string) => {
   try {
     const archivePath = `./cache/${archiveName}.zip`;
     const extractPath = `./cache/unpacked/${archiveName}`;
+    
+    // Создаем папку cache если она не существует
+    if (!fs.existsSync('./cache')) {
+      fs.mkdirSync('./cache', { recursive: true });
+      logInfo(`[${archiveName}.zip] Created cache directory`);
+    }
     
     // Проверяем существование архива и его хэш
     const checkResult = checkFile(archivePath);
@@ -31,7 +44,7 @@ export const fetchArchive = async (archiveName: string) => {
       logInfo(
         `[${archiveName}.zip] checksum: \nserver checksum: ${serverChecksum.data}\nclient checksum: ${checkResult.checksum}\nResult: ${isIdentical ? '✔️ Identical' : '❌ Different'}`,
       );
-      
+
       if (!isIdentical) {
         // Хэш не совпадает - нужно обновить архив
         needsDownload = true;
@@ -43,10 +56,32 @@ export const fetchArchive = async (archiveName: string) => {
 
     // Загружаем архив если необходимо
     if (needsDownload) {
+      // Отправляем событие начала загрузки
+      sendOperationStart('download', 1);
+
       const configArchive = await getFile(archiveName);
-      logInfo(`[${archiveName}.zip] file size: ${configArchive.headers['content-length']}`);
-      await pipeline(configArchive.data, fs.createWriteStream(archivePath));
+      const totalSize = parseInt(configArchive.headers['content-length'] || '0');
+
+      logInfo(`[${archiveName}.zip] file size: ${totalSize}`);
+
+      // Создаем поток с отслеживанием прогресса
+      let downloadedSize = 0;
+      const progressStream = new PassThrough();
+
+      progressStream.on('data', (chunk) => {
+        downloadedSize += chunk.length;
+        const progress = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
+
+        // Отправляем обновление прогресса
+        sendProgressUpdate(progress, `${archiveName}.zip`, downloadedSize);
+      });
+
+      await pipeline(configArchive.data, progressStream, fs.createWriteStream(archivePath));
+
       logInfo(`[${archiveName}.zip] file saved!`);
+
+      // Отправляем событие завершения загрузки
+      sendOperationComplete();
     }
 
     // Распаковываем если архив был загружен или папка распаковки пуста
@@ -55,6 +90,7 @@ export const fetchArchive = async (archiveName: string) => {
       logInfo(`[${archiveName}.zip] extracted to ${extractPath}`);
     }
   } catch (e) {
+    sendOperationError(e instanceof Error ? e.message : String(e));
     logError(e);
   }
 };

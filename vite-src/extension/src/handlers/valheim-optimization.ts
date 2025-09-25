@@ -1,8 +1,8 @@
 import { logError, logInfo } from '../utils/logger.js';
-import { 
-  addOptimizationSettings, 
-  removeOptimizationSettings, 
-  checkBootConfigExists 
+import {
+  addOptimizationSettings,
+  removeOptimizationSettings,
+  checkBootConfigExists,
 } from '../utils/boot-config.js';
 
 /**

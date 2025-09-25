@@ -5,11 +5,15 @@
 	"type": "module",
 	"scripts": {
 		"dev": "npm run build:extension && vite",
+		"copyenv": "copyfiles .env ../ && copyfiles .env ../dist/VLauncher",
 		"build:extension": "node esbuild.extension.config.mjs",
 		"start:extension": "node ../extensions/extension.js",
 		"build:start:extension": "npm run build:extension && npm run start:extension",
 		"build": "tsc -b && vite build && npm run build:extension",
-		"lint": "eslint .",
+		"lint": "npm run lint:all",
+		"lint:extension": "eslint extension/src/ --config extension/eslint.config.js --fix",
+		"lint:all": "npm run lint:main && npm run lint:extension",
+		"lint:main": "eslint src/ --fix",
 		"preview": "vite preview"
 	},
 	"dependencies": {
@@ -41,6 +45,7 @@
 		"@types/websocket": "^1.0.10",
 		"@vitejs/plugin-react-swc": "3.8.0",
 		"autoprefixer": "10.4.20",
+		"copyfiles": "^2.4.1",
 		"esbuild": "^0.25.10",
 		"eslint": "9.20.0",
 		"eslint-plugin-react-hooks": "^5.2.0",

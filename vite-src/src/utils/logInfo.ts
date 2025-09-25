@@ -3,9 +3,10 @@ import { isPlainObject } from '@reduxjs/toolkit';
 
 export const logInfo = (text: string | null | undefined | object, second?: object) => {
   if (typeof text === 'string') {
-    debug.log(text ?? 'Пустое тело ошибки');
-    debug.log(JSON.stringify(second) ?? 'Пустое тело ошибки');
-    console.log(text, second);
+    const secondMsg = second ? `\n[second] ${JSON.stringify(second)}` : '';
+    const msg = `[app-info] ${text} ${secondMsg}`;
+    debug.log(msg);
+    console.log(msg);
   }
 
   if (isPlainObject(text)) {

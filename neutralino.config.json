@@ -12,7 +12,7 @@
   "enableExtensions": true,
   "extensions": [{
     "id": "fileLoader",
-    "command": "node --env-file=vite-src/.env ${NL_PATH}/extensions/extension.js"
+    "command": "node --env-file=.env ${NL_PATH}/extensions/extension.js > extension_log.txt 2>&1"
   }],
   "modes": {
     "window": {
