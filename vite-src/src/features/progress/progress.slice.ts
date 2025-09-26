@@ -64,17 +64,7 @@ export const progressSlice = createSlice({
     },
   },
   selectors: {
-    progressInfoSelector: (state) => ({
-      isLoading: state.isLoading,
-      progress: state.progress,
-      currentFile: state.currentFile,
-      operation: state.operation,
-      totalFiles: state.totalFiles,
-      downloadedSize: state.downloadedSize,
-      totalSize: state.totalSize,
-      extractedFiles: state.extractedFiles,
-      error: state.error,
-    }),
+    progressInfoSelector: (state) => state,
   },
 });
 

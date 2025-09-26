@@ -7,7 +7,6 @@ import {
   updateProgress,
 } from '@/features/progress/progress.slice.ts';
 import { logInfo } from '@/utils/logInfo.ts';
-import { loadArchives } from '@/shared/actions/load-archives.ts';
 
 export const registerEvents = async () => {
   await events.on('windowClose', async () => {
@@ -19,8 +18,6 @@ export const registerEvents = async () => {
     console.log('Broadcast', ev.detail);
   });
   await events.on('extensionToApp', async (ev) => {
-    console.log('extensionToApp', ev.detail);
-
     // Обрабатываем события прогресса
     const { event, data } = ev.detail;
 
@@ -61,10 +58,6 @@ export const registerEvents = async () => {
   });
   await events.on('log', (ev) => {
     logInfo('[extension-log] ', ev.detail);
-  });
-  await events.on('extensionReady', (ev) => {
-    logInfo('extensionReady', ev.detail);
-    store.dispatch(loadArchives());
   });
   await events.on('extClientConnect', (ev) => {
     logInfo('extClientConnect', ev.detail);

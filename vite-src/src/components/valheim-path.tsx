@@ -25,12 +25,12 @@ export const ValheimPath = () => {
     <Card>
       <Text size="sm" mb="xs">
         {valheimPath && valheimPathValid
-          ? 'Обнаружен путь до установленной копии Valheim:'
+          ? '✅  Обнаружен путь до установленной копии Valheim:'
           : 'Нажмите "Обзор" и выберите путь до папки с установленным Valheim'}
       </Text>
       {valheimPath && !valheimPathValid && (
         <Text size="xs" mb="xs" c="orange">
-          По указанному пути не найден valheim.exe
+          ❌ По указанному пути не найден valheim.exe
         </Text>
       )}
       <Grid grow>

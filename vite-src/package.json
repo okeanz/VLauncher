@@ -9,7 +9,7 @@
 		"build:extension": "node esbuild.extension.config.mjs",
 		"start:extension": "node ../extensions/extension.js",
 		"build:start:extension": "npm run build:extension && npm run start:extension",
-		"build": "tsc -b && vite build && npm run build:extension",
+		"build": "tsc -b && vite build && npm run build:extension && npm run copyenv",
 		"lint": "npm run lint:all",
 		"lint:extension": "eslint extension/src/ --config extension/eslint.config.js --fix",
 		"lint:all": "npm run lint:main && npm run lint:extension",
