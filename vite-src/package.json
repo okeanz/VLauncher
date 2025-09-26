@@ -4,12 +4,11 @@
 	"version": "0.0.0",
 	"type": "module",
 	"scripts": {
-		"dev": "npm run build:extension && vite",
-		"copyenv": "copyfiles .env ../ && copyfiles .env ../dist/VLauncher",
+		"dev": "npm run prepare:extension && vite",
 		"build:extension": "node esbuild.extension.config.mjs",
-		"start:extension": "node ../extensions/extension.js",
-		"build:start:extension": "npm run build:extension && npm run start:extension",
-		"build": "tsc -b && vite build && npm run build:extension && npm run copyenv",
+		"package:extension": "pkg --config ./pkg.json ./dist/extension.js --targets node18-win-x64 --output ../extensions/extension.exe",
+		"prepare:extension": "npm run build:extension && npm run package:extension",
+		"build": "tsc -b && vite build && npm run prepare:extension",
 		"lint": "npm run lint:all",
 		"lint:extension": "eslint extension/src/ --config extension/eslint.config.js --fix",
 		"lint:all": "npm run lint:main && npm run lint:extension",
@@ -27,6 +26,8 @@
 		"axios": "^1.12.2",
 		"clsx": "2.1.1",
 		"crypto": "^1.0.1",
+		"dotenv": "^17.2.2",
+		"pidlockfile": "^1.1.1",
 		"react": "19.0.0",
 		"react-dom": "19.0.0",
 		"react-error-boundary": "4.1.2",
@@ -34,8 +35,7 @@
 		"react-router": "7.1.5",
 		"react-router-dom": "7.1.5",
 		"tailwind-merge": "2.6.0",
-		"uuid": "^13.0.0",
-		"websocket": "^1.0.35"
+		"ws": "^8.18.3"
 	},
 	"devDependencies": {
 		"@types/adm-zip": "^0.5.7",
@@ -43,6 +43,7 @@
 		"@types/react": "19.0.8",
 		"@types/react-dom": "19.0.3",
 		"@types/websocket": "^1.0.10",
+		"@types/ws": "^8.18.1",
 		"@vitejs/plugin-react-swc": "3.8.0",
 		"autoprefixer": "10.4.20",
 		"copyfiles": "^2.4.1",

@@ -1,4 +1,4 @@
-import { IMessageEvent } from 'websocket';
+import { MessageEvent } from 'ws';
 import { logError, logInfo } from './utils/logger.ts';
 import {
   enableValheimOptimization,
@@ -8,7 +8,7 @@ import process from 'process';
 import { receivedPong, setHeartbeatPause } from './websocket/heartbeat.js';
 import { fetchArchive } from './handlers/fetch-archive.js';
 
-export const messageHandler = async (e: IMessageEvent) => {
+export const messageHandler = async (e: MessageEvent) => {
   try {
     // Не особо важно какое сообщение, если что-то пришло, значит app жив
     receivedPong();
@@ -16,12 +16,13 @@ export const messageHandler = async (e: IMessageEvent) => {
 
     if (event === 'LoadFiles') {
       logInfo(`Processing LoadFiles...`);
+      // Дабы не делать воркеры, проще так тормознуть на время пинг-понг
       setHeartbeatPause();
 
       // Загружаем и распаковываем архивы
+      await fetchArchive('BepInEx');
       await fetchArchive('patchers');
       await fetchArchive('config');
-      await fetchArchive('BepInEx');
       setHeartbeatPause(false);
     }
 

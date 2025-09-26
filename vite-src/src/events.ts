@@ -10,7 +10,6 @@ import { logInfo } from '@/utils/logInfo.ts';
 
 export const registerEvents = async () => {
   await events.on('windowClose', async () => {
-    console.log('Window Closed');
     await extensions.dispatch('fileLoader', 'terminate');
     await app.killProcess();
   });

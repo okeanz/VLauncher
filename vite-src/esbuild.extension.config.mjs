@@ -5,7 +5,7 @@ build({
   bundle: true,
   platform: 'node',
   target: 'node18',
-  outfile: '../extensions/extension.js',
+  outfile: './dist/extension.js',
   sourcemap: true,
   minify: true,
 }).catch((err) => {

@@ -1,5 +1,5 @@
 import { makeSend } from './setup-ws.js';
-import { w3cwebsocket } from 'websocket';
+import WS from 'ws';
 import { logInfo } from '../utils/logger.js';
 
 let pingTimer: NodeJS.Timeout | null = null;
@@ -10,7 +10,7 @@ let heartbeatOnPause = false;
 const pingEvery = 5000;
 const checkEvery = 4000;
 
-export function startHeartbeat(ws: w3cwebsocket) {
+export function startHeartbeat(ws: WS) {
   pingTimer = setInterval(() => {
     const send = makeSend();
     if (ws.readyState === ws.OPEN) {

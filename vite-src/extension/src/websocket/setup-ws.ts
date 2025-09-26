@@ -1,9 +1,9 @@
 import { logError, logInfo } from '../utils/logger.ts';
 import process from 'process';
-import { w3cwebsocket as WS } from 'websocket';
+import WS from 'ws';
 import { messageHandler } from '../message-handler.ts';
-import { v4 as uuidv4 } from 'uuid/dist/index.js';
-import {startHeartbeat, stopHeartbeat} from "./heartbeat.js";
+import { randomUUID } from 'crypto';
+import { startHeartbeat, stopHeartbeat } from './heartbeat.js';
 
 type setupWsParams = {
   NL_PORT: string;
@@ -17,27 +17,27 @@ let accessToken: string;
 
 export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParams) => {
   try {
-    client = new WS(
-        `ws://localhost:${NL_PORT}?extensionId=${NL_EXTID}&connectToken=${NL_CTOKEN}`
-    );
+    client = new WS(`ws://127.0.0.1:${NL_PORT}?extensionId=${NL_EXTID}&connectToken=${NL_CTOKEN}`);
     accessToken = NL_TOKEN;
 
-    logInfo("START");
-
+    logInfo('START');
 
     client.onopen = () => {
-      logInfo("Connected");
+      logInfo('Connected');
       startHeartbeat(client);
     };
 
     client.onclose = () => {
-      logInfo("Connection closed!");
+      logInfo('Connection closed!');
       stopHeartbeat();
       process.exit(0);
     };
 
-    client.onerror = () => {
-      logInfo("Connection error!");
+    client.onerror = (e) => {
+      logInfo('Connection error!2');
+      logInfo(e.message);
+      logInfo(e.type);
+      logInfo(e.error);
       stopHeartbeat();
       process.exit(0);
     };
@@ -48,7 +48,6 @@ export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParam
   }
 };
 
-
 export const makeSend =
   (event: 'extensionToApp' | 'log' = 'extensionToApp') =>
   (data: object | string) => {
@@ -56,7 +55,7 @@ export const makeSend =
       if (!client || !accessToken) return;
 
       const msg = JSON.stringify({
-        id: uuidv4(),
+        id: randomUUID(),
         method: 'app.broadcast',
         accessToken,
         data: {
@@ -66,7 +65,7 @@ export const makeSend =
       });
 
       client.send(msg);
-    } catch {
-      /* empty */
+    } catch (e) {
+      console.log('send error', e);
     }
   };

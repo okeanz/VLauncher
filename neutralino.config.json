@@ -12,7 +12,7 @@
   "enableExtensions": true,
   "extensions": [{
     "id": "fileLoader",
-    "command": "node --env-file=.env ${NL_PATH}/extensions/extension.js > extension_log.txt 2>&1"
+    "command": "\"${NL_PATH}/extensions/extension.exe\" > extension_log.txt 2>&1"
   }],
   "modes": {
     "window": {
@@ -23,7 +23,7 @@
       "maxWidth": 800,
       "minHeight": 600,
       "minWidth": 800,
-      "exitProcessOnClose": true,
+      "exitProcessOnClose": false,
       "resizable": false,
       "icon": "/vite-src/public/icon.png",
       "enableInspector": true

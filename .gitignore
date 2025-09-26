@@ -2,7 +2,7 @@
 .lite_workspace.lua
 
 .env
-
+lockfile
 # Neutralinojs binaries and builds
 /bin
 /dist

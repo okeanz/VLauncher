@@ -12,16 +12,21 @@ import { registerEvents } from '@/events.ts';
 import { findValheimPath } from '@/utils/find-valheim-path.ts';
 
 registerEvents().then(async () => {
-  init();
-  const res = await findValheimPath();
+  try {
+    init();
 
-  store.dispatch(setValheimPath(res));
+    const valheimPath = await findValheimPath();
 
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <AppProvider>
-        <AppRoutes />
-      </AppProvider>
-    </StrictMode>,
-  );
+    store.dispatch(setValheimPath(valheimPath));
+
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <AppProvider>
+          <AppRoutes />
+        </AppProvider>
+      </StrictMode>,
+    );
+  } catch (e) {
+    console.error(e);
+  }
 });

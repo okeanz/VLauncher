@@ -13,6 +13,12 @@ import fs from 'fs';
 import { extractArchive } from '../utils/extract-archive.js';
 import { cleanDirectory } from '../utils/clean-directory.js';
 
+let abort = false;
+
+export const abortExecution = () => {
+  abort = true;
+};
+
 /**
  * Загружает архив с сервера и распаковывает его в папку ./cache/unpacked/{archiveName}
  * Очищает папку распаковки только если хэш архива не совпадает с серверным
@@ -21,13 +27,13 @@ export const fetchArchive = async (archiveName: string) => {
   try {
     const archivePath = `./cache/${archiveName}.zip`;
     const extractPath = `./cache/unpacked/${archiveName}`;
-    
+
     // Создаем папку cache если она не существует
     if (!fs.existsSync('./cache')) {
       fs.mkdirSync('./cache', { recursive: true });
       logInfo(`[${archiveName}.zip] Created cache directory`);
     }
-    
+
     // Проверяем существование архива и его хэш
     const checkResult = checkFile(archivePath);
     logInfo(`[${archiveName}.zip] checkResult ${JSON.stringify(checkResult)}`);
@@ -69,6 +75,12 @@ export const fetchArchive = async (archiveName: string) => {
       const progressStream = new PassThrough();
 
       progressStream.on('data', (chunk) => {
+        if (abort) {
+          logInfo(`[${archiveName}.zip] terminating loading ...`);
+          progressStream.destroy(new Error('Aborted by SIGINT'));
+          return;
+        }
+
         downloadedSize += chunk.length;
         const progress = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
 
@@ -83,6 +95,8 @@ export const fetchArchive = async (archiveName: string) => {
       // Отправляем событие завершения загрузки
       sendOperationComplete();
     }
+
+    if (abort) return;
 
     // Распаковываем если архив был загружен или папка распаковки пуста
     if (needsDownload || !fs.existsSync(extractPath) || fs.readdirSync(extractPath).length === 0) {
