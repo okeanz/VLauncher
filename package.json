@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "sign:admin": "mt.exe -manifest app.manifest -outputresource:dist\\VLauncher\\VLauncher-win_x64.exe;#1",
+    "build:app": "neu build && npm run sign:admin"
+  }
+}

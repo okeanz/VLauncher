@@ -7,6 +7,9 @@ import {
 import process from 'process';
 import { receivedPong, setHeartbeatPause } from './websocket/heartbeat.js';
 import { fetchArchive } from './handlers/fetch-archive.js';
+import { mountSymlinks } from './handlers/mount-symlinks.js';
+import path from 'path';
+import { extensionCleanup } from './on-exit.js';
 
 export const messageHandler = async (e: MessageEvent) => {
   try {
@@ -21,8 +24,11 @@ export const messageHandler = async (e: MessageEvent) => {
 
       // Загружаем и распаковываем архивы
       await fetchArchive('BepInEx');
-      await fetchArchive('patchers');
-      await fetchArchive('config');
+      await fetchArchive('patchers', 'BepInEx/BepInEx');
+      await fetchArchive('config', 'BepInEx/BepInEx');
+      await fetchArchive('plugins', 'BepInEx/BepInEx');
+
+      await mountSymlinks(path.resolve('./cache/unpacked/BepInEx'), data.valheimPath);
       setHeartbeatPause(false);
     }
 
@@ -36,6 +42,7 @@ export const messageHandler = async (e: MessageEvent) => {
 
     if (event === 'terminate') {
       logInfo(`Processing Terminate...`);
+      extensionCleanup();
       setTimeout(() => {
         process.exit(0);
       }, 500);

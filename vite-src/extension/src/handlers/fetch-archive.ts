@@ -23,10 +23,12 @@ export const abortExecution = () => {
  * Загружает архив с сервера и распаковывает его в папку ./cache/unpacked/{archiveName}
  * Очищает папку распаковки только если хэш архива не совпадает с серверным
  */
-export const fetchArchive = async (archiveName: string) => {
+export const fetchArchive = async (archiveName: string, forceExtractName?: string) => {
   try {
     const archivePath = `./cache/${archiveName}.zip`;
-    const extractPath = `./cache/unpacked/${archiveName}`;
+    const extractPath = forceExtractName
+      ? `./cache/unpacked/${forceExtractName}/${archiveName}`
+      : `./cache/unpacked/${archiveName}`;
 
     // Создаем папку cache если она не существует
     if (!fs.existsSync('./cache')) {

@@ -4,16 +4,20 @@ import { progressInfoSelector, clearError } from '@/features/progress/progress.s
 import { loadArchives } from '@/shared/actions/load-archives';
 import { IconRefresh } from '@tabler/icons-react';
 import { useSelector } from 'react-redux';
-import { valheimPathValidSelector } from '@/features/settings/settings.slice.ts';
+import {
+  valheimPathSelector,
+  valheimPathValidSelector,
+} from '@/features/settings/settings.slice.ts';
 
 export const LoadingBar = () => {
   const progressInfo = useAppSelector(progressInfoSelector);
   const valheimPathValid = useSelector(valheimPathValidSelector);
+  const valheimPath = useSelector(valheimPathSelector);
   const dispatch = useAppDispatch();
 
   const handleRetry = () => {
     dispatch(clearError());
-    dispatch(loadArchives());
+    dispatch(loadArchives(valheimPath));
   };
 
   const getOperationIcon = (operation: string) => {
