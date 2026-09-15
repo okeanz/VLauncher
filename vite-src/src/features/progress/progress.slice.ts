@@ -1,82 +1,92 @@
-import { createSlice } from '@reduxjs/toolkit';
-
-export type ProgressState = {
-  isLoading: boolean;
-  progress: number;
-  currentFile: string;
-  totalFiles: number;
-  operation: 'download' | 'extract' | 'idle';
-  downloadedSize: number;
-  totalSize: number;
-  extractedFiles: number;
-  error: string | null;
-};
-
-export const initialState: ProgressState = {
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+export const initialState = {
   isLoading: false,
-  progress: 0,
+  readyPath: '',
+  requestedPath: '',
+  running: false,
+  configuring: false,
+  launching: false,
+  connected: false,
   currentFile: '',
-  totalFiles: 0,
-  operation: 'idle',
-  downloadedSize: 0,
-  totalSize: 0,
-  extractedFiles: 0,
-  error: null,
+  error: null as string | null,
 };
-
+export type ProgressState = typeof initialState;
+export const canLaunch = (state: ProgressState, game: string) =>
+  Boolean(
+    game &&
+      state.connected &&
+      state.readyPath === game &&
+      !state.isLoading &&
+      !state.running &&
+      !state.launching &&
+      !state.configuring &&
+      !state.error,
+  );
 export const progressSlice = createSlice({
   name: 'progress',
   initialState,
   reducers: {
-    startOperation: (state, action) => {
-      const { operation, totalFiles, totalSize } = action.payload;
+    beginInstall(state, action: PayloadAction<string>) {
       state.isLoading = true;
-      state.operation = operation;
-      state.progress = 0;
-      state.totalFiles = totalFiles || 0;
-      state.totalSize = totalSize || 0;
-      state.downloadedSize = 0;
-      state.extractedFiles = 0;
+      state.readyPath = '';
+      state.requestedPath = action.payload;
       state.error = null;
+      state.currentFile = 'Проверка релиза';
     },
-    updateProgress: (state, action) => {
-      const { progress, currentFile, downloadedSize, extractedFiles } = action.payload;
-      state.progress = Math.min(100, Math.max(0, progress));
-      if (currentFile) state.currentFile = currentFile;
-      if (downloadedSize !== undefined) state.downloadedSize = downloadedSize;
-      if (extractedFiles !== undefined) state.extractedFiles = extractedFiles;
+    installReady(state, action: PayloadAction<string>) {
+      if (state.isLoading && state.requestedPath === action.payload) {
+        state.isLoading = false;
+        state.readyPath = action.payload;
+        state.currentFile = '';
+      }
     },
-    completeOperation: (state) => {
-      state.isLoading = false;
-      state.progress = 100;
-      state.operation = 'idle';
-      state.currentFile = '';
+    updateProgress(state, action: PayloadAction<string>) {
+      if (state.isLoading) state.currentFile = action.payload;
     },
-    setError: (state, action) => {
+    setError(state, action: PayloadAction<string>) {
       state.error = action.payload;
+      state.readyPath = '';
       state.isLoading = false;
+      state.launching = false;
+      state.configuring = false;
     },
-    clearError: (state) => {
+    clearError(state) {
       state.error = null;
     },
-    resetProgress: () => {
-      return { ...initialState };
+    setConnected(state, action: PayloadAction<boolean>) {
+      state.connected = action.payload;
+      if (!action.payload) {
+        state.readyPath = '';
+        state.isLoading = false;
+        state.launching = false;
+        state.configuring = false;
+        state.error = 'Соединение с установщиком потеряно. Перезапустите лаунчер.';
+      }
     },
+    setRunning(state, action: PayloadAction<boolean>) {
+      state.running = action.payload;
+      state.launching = false;
+    },
+    setLaunching(state, action: PayloadAction<boolean>) {
+      state.launching = action.payload;
+    },
+    setConfiguring(state, action: PayloadAction<boolean>) {
+      state.configuring = action.payload;
+    },
+    resetProgress: (state) => ({ ...initialState, connected: state.connected }),
   },
-  selectors: {
-    progressInfoSelector: (state) => state,
-  },
+  selectors: { progressInfoSelector: (state) => state },
 });
-
 export const {
-  startOperation,
+  beginInstall,
+  installReady,
   updateProgress,
-  completeOperation,
   setError,
   clearError,
+  setConnected,
+  setRunning,
+  setLaunching,
+  setConfiguring,
   resetProgress,
 } = progressSlice.actions;
-
-export const {
-  progressInfoSelector,
-} = progressSlice.selectors;
+export const { progressInfoSelector } = progressSlice.selectors;

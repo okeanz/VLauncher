@@ -1,7 +1,5 @@
 {
   "pkg": {
-    "assets": [
-      ".env"
-    ]
+    "assets": []
   }
 }

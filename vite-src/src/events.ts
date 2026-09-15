@@ -1,64 +1,92 @@
 import { app, events, extensions } from '@neutralinojs/lib';
 import { store } from '@/shared/store';
 import {
-  completeOperation,
-  setError,
-  startOperation,
+  beginInstall,
+  installReady,
   updateProgress,
-} from '@/features/progress/progress.slice.ts';
-import { logInfo } from '@/utils/logInfo.ts';
-
+  setError,
+  setConnected,
+  setRunning,
+  setConfiguring,
+} from '@/features/progress/progress.slice';
+import { setOptimizationConfirmed } from '@/features/settings/settings.slice';
+import { loadArchives } from '@/shared/actions/load-archives';
+let closing = false;
+let closeTimeout: ReturnType<typeof setTimeout> | undefined;
+let helloTimer: ReturnType<typeof setInterval> | undefined;
 export const registerEvents = async () => {
   await events.on('windowClose', async () => {
-    await extensions.dispatch('fileLoader', 'terminate');
-    await app.killProcess();
-  });
-  await events.on('broadcast', (ev) => {
-    console.log('Broadcast', ev.detail);
+    if (closing) return;
+    closing = true;
+    if (helloTimer) clearInterval(helloTimer);
+    closeTimeout = setTimeout(() => {
+      void app.killProcess();
+    }, 15000);
+    try {
+      await extensions.dispatch('fileLoader', 'terminate');
+    } catch {
+      clearTimeout(closeTimeout);
+      await app.killProcess();
+    }
   });
   await events.on('extensionToApp', async (ev) => {
-    // Обрабатываем события прогресса
     const { event, data } = ev.detail;
-
     switch (event) {
-      case 'operationStart':
-        store.dispatch(
-          startOperation({
-            operation: data.operation,
-            totalFiles: data.totalFiles,
-            totalSize: data.totalSize,
-          }),
-        );
+      case 'extensionReady': {
+        if (helloTimer) clearInterval(helloTimer);
+        const wasConnected = store.getState().progress.connected;
+        store.dispatch(setConnected(true));
+        const s = store.getState().settings;
+        if (!wasConnected && s.valheimPathValid) void store.dispatch(loadArchives(s.valheimPath));
         break;
-
-      case 'progressUpdate':
-        store.dispatch(
-          updateProgress({
-            progress: data.progress,
-            currentFile: data.currentFile,
-            downloadedSize: data.downloadedSize,
-            extractedFiles: data.extractedFiles,
-          }),
-        );
+      }
+      case 'installStarted':
+        store.dispatch(beginInstall(data.gamePath));
         break;
-
-      case 'operationComplete':
-        store.dispatch(completeOperation());
+      case 'installReady':
+        store.dispatch(installReady(data.gamePath));
         break;
-
+      case 'installProgress':
+        store.dispatch(updateProgress(data.currentFile));
+        break;
       case 'operationError':
         store.dispatch(setError(data.error));
         break;
-
+      case 'gameState':
+        store.dispatch(setRunning(data.running));
+        break;
+      case 'optimizationReady':
+        if (data.gamePath === store.getState().settings.valheimPath)
+          store.dispatch(setOptimizationConfirmed(data.enabled));
+        store.dispatch(setConfiguring(false));
+        break;
+      case 'shutdownComplete':
+        if (closing) {
+          clearTimeout(closeTimeout);
+          await app.killProcess();
+        }
+        break;
       case 'ping':
         await extensions.dispatch('fileLoader', 'pong');
         break;
     }
   });
-  await events.on('log', (ev) => {
-    logInfo('[extension-log] ', ev.detail);
+  await events.on('extClientDisconnect', () => {
+    store.dispatch(setConnected(false));
   });
-  await events.on('extClientConnect', (ev) => {
-    logInfo('extClientConnect', ev.detail);
+  await events.on('ready', () => {
+    let attempts = 0;
+    const hello = () => {
+      if (++attempts > 30) {
+        clearInterval(helloTimer);
+        store.dispatch(
+          setError('Установщик не запустился. Перезапустите лаунчер и проверьте журнал.'),
+        );
+        return;
+      }
+      void extensions.dispatch('fileLoader', 'Hello').catch(() => {});
+    };
+    helloTimer = setInterval(hello, 1000);
+    hello();
   });
 };

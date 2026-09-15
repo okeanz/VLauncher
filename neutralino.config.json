@@ -4,16 +4,31 @@
   "defaultMode": "window",
   "documentRoot": "/vite-src/dist/",
   "url": "/",
-  "port": 3000,
+  "port": 0,
   "enableServer": true,
   "enableNativeAPI": true,
-  "nativeAllowList": ["app.*", "filesystem.*", "os.*", "debug.*", "storage.*", "extensions.*", "events.*"],
+  "nativeAllowList": [
+    "app.broadcast",
+    "app.killProcess",
+    "filesystem.readFile",
+    "filesystem.readDirectory",
+    "filesystem.getStats",
+    "os.execCommand",
+    "os.showFolderDialog",
+    "debug.log",
+    "storage.getData",
+    "storage.setData",
+    "extensions.dispatch",
+    "events.*"
+  ],
   "singlePageServe": true,
   "enableExtensions": true,
-  "extensions": [{
-    "id": "fileLoader",
-    "command": "\"${NL_PATH}/extensions/extension.exe\" > extension_log.txt 2>&1"
-  }],
+  "extensions": [
+    {
+      "id": "fileLoader",
+      "command": "\"${NL_PATH}/extensions/extension.exe\""
+    }
+  ],
   "modes": {
     "window": {
       "title": "VLauncher",
@@ -26,7 +41,7 @@
       "exitProcessOnClose": false,
       "resizable": false,
       "icon": "/vite-src/public/icon.png",
-      "enableInspector": true
+      "enableInspector": false
     }
   },
   "cli": {

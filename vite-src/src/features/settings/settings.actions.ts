@@ -1,70 +1,38 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { checkValheimExe } from '@/utils/check-valheim-exe.ts';
-import { storage, extensions } from '@neutralinojs/lib';
-import { gamePathKey, optimizationKey } from '@/constants/storage-keys.ts';
-import { logInfo } from '@/utils/logInfo.ts';
-import { loadArchives } from '@/shared/actions/load-archives.ts';
-
+import { checkValheimExe } from '@/utils/check-valheim-exe';
+import { storage } from '@neutralinojs/lib';
+import { gamePathKey } from '@/constants/storage-keys';
+import { loadArchives } from '@/shared/actions/load-archives';
+import { resetProgress, setError, type ProgressState } from '@/features/progress/progress.slice';
 export const setValheimPath = createAsyncThunk(
   'settings/setValheimPath',
   async (directoryPath: string, { dispatch }) => {
-    const isValid = await checkValheimExe(directoryPath);
-
+    dispatch(resetProgress());
+    const isValid = Boolean(directoryPath) && (await checkValheimExe(directoryPath));
     if (isValid) {
-      logInfo(`Setting storageGamePath: ${directoryPath}`);
-      await storage.setData(gamePathKey, directoryPath);
-
-      // Инициализируем настройки только если путь валидный
-      dispatch(initializeSettings(directoryPath));
-
-      dispatch(loadArchives(directoryPath));
-    }
-
-    return {
-      path: directoryPath,
-      isValid,
-    };
-  },
-);
-
-export const setValheimOptimization = createAsyncThunk(
-  'settings/setValheimOptimization',
-  async (enabled: boolean) => {
-    logInfo(`Setting valheim optimization: ${enabled}`);
-    await storage.setData(optimizationKey, enabled.toString());
-    return enabled;
-  },
-);
-
-export const initializeSettings = createAsyncThunk(
-  'settings/initializeSettings',
-  async (valheimPath: string, { dispatch }) => {
-    try {
-      if (!valheimPath) {
-        logInfo('Valheim path not provided, skipping optimization check');
-        return;
+      try {
+        await storage.setData(gamePathKey, directoryPath);
+      } catch (error) {
+        dispatch(setError('Не удалось сохранить путь к игре'));
+        throw error;
       }
-
-      // Получаем значение оптимизации из storage
-      const optimizationValue = await storage.getData(optimizationKey);
-      const isEnabled = optimizationValue ? optimizationValue === 'true' : true;
-
-      logInfo(`Storage optimization value: ${isEnabled}`);
-
-      // Устанавливаем состояние в Redux
-      dispatch(setValheimOptimization(isEnabled));
-
-      // Если оптимизация включена, отправляем событие для проверки и добавления строк в файл
-      if (isEnabled) {
-        logInfo('Sending event to check and apply optimization settings');
-        await extensions.dispatch('fileLoader', 'EnableValheimOptimization', {
-          valheimPath: valheimPath,
-        });
-      }
-    } catch (error) {
-      logInfo(`Error initializing settings: ${error}`);
-      // По умолчанию включено при ошибке
-      dispatch(setValheimOptimization(true));
+      void dispatch(loadArchives(directoryPath));
     }
+    return { path: directoryPath, isValid };
+  },
+  {
+    condition: (_path, { getState }) => {
+      const { progress, settings } = getState() as {
+        progress: ProgressState;
+        settings: { selecting: boolean };
+      };
+      return (
+        !settings.selecting &&
+        !progress.isLoading &&
+        !progress.running &&
+        !progress.launching &&
+        !progress.configuring
+      );
+    },
   },
 );

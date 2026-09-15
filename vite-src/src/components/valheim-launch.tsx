@@ -5,9 +5,8 @@ import {
   valheimPathSelector,
   valheimPathValidSelector,
 } from '@/features/settings/settings.slice.ts';
-import { progressInfoSelector } from '@/features/progress/progress.slice';
+import { progressInfoSelector, canLaunch } from '@/features/progress/progress.slice';
 import { launchValheim } from '@/utils/launch-valheim.ts';
-import { useFileServerCheck } from '@/hooks/use-file-server-check.ts';
 
 export const ValheimLaunch = () => {
   const valheimPath = useSelector(valheimPathSelector);
@@ -16,9 +15,7 @@ export const ValheimLaunch = () => {
 
   const handleLaunch = () => launchValheim(valheimPath);
 
-  const { isReady } = useFileServerCheck();
-
-  const isDisabled = !valheimPathValid || !isReady || progressInfo.isLoading;
+  const isDisabled = !valheimPathValid || !canLaunch(progressInfo, valheimPath);
 
   return (
     <Button
@@ -27,7 +24,11 @@ export const ValheimLaunch = () => {
       disabled={isDisabled}
       leftSection={<IconPlayerPlay size={20} />}
     >
-      {progressInfo.isLoading ? 'Загрузка файлов...' : 'Запустить Valheim'}
+      {progressInfo.running
+        ? 'Игра запущена'
+        : progressInfo.isLoading
+          ? 'Установка модпака...'
+          : 'Запустить Valheim'}
     </Button>
   );
 };

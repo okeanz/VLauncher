@@ -11,6 +11,14 @@ import { useAppDispatch } from '@/shared/store/types.ts';
 export const ValheimPath = () => {
   const dispatch = useAppDispatch();
 
+  const busy = useSelector(
+    (s: import('@/shared/store').RootState) =>
+      s.settings.selecting ||
+      s.progress.isLoading ||
+      s.progress.running ||
+      s.progress.launching ||
+      s.progress.configuring,
+  );
   const valheimPath = useSelector(valheimPathSelector);
   const valheimPathValid = useSelector(valheimPathValidSelector);
 
@@ -18,7 +26,7 @@ export const ValheimPath = () => {
     const result = await os.showFolderDialog('Выберите папку', {
       defaultPath: valheimPath ?? 'C:/',
     });
-    dispatch(setValheimPath(result));
+    if (result) dispatch(setValheimPath(result));
   };
 
   return (
@@ -42,7 +50,7 @@ export const ValheimPath = () => {
           />
         </Grid.Col>
         <Grid.Col span={2}>
-          <Button fullWidth={true} onClick={showDialog}>
+          <Button disabled={busy} fullWidth={true} onClick={showDialog}>
             Обзор
           </Button>
         </Grid.Col>

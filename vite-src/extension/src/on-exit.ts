@@ -1,20 +1,25 @@
-import { logInfo } from './utils/logger.js';
-import { client } from './websocket/setup-ws.js';
+import { controller } from './message-handler.js';
 import { stopHeartbeat } from './websocket/heartbeat.js';
-import { abortExecution } from './handlers/fetch-archive.js';
-import { lastUsedPath } from './handlers/mount-symlinks.js';
-import { removeSymlinks } from './handlers/remove-symlinks.js';
-
-export function extensionCleanup() {
-  logInfo('Exit process...');
-
-  const cleanup = () => {
-    abortExecution();
+import { client, makeSend } from './websocket/setup-ws.js';
+let release: (() => Promise<void>) | undefined;
+let pending: Promise<void> | undefined;
+export function setLockRelease(fn: () => Promise<void>) {
+  release = fn;
+}
+export function shutdown(code = 0): Promise<void> {
+  return (pending ??= (async () => {
     stopHeartbeat();
-    if (client && client.readyState === client.OPEN) {
-      client.close(1000, 'App shutting down');
+    try {
+      await controller.stop();
+      await release?.();
+    } catch (e) {
+      console.error('Shutdown failed', e instanceof Error ? e.message : 'unknown error');
+      code = 1;
+    } finally {
+      makeSend()({ event: 'shutdownComplete', data: {} });
+      client?.close();
+      process.stdin.destroy();
+      process.exitCode = code;
     }
-  };
-
-  removeSymlinks(lastUsedPath).catch(cleanup).finally(cleanup);
+  })());
 }

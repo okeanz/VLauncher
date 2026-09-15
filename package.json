@@ -1,6 +1,9 @@
 {
+  "name": "vlauncher-desktop",
+  "private": true,
   "scripts": {
-    "sign:admin": "mt.exe -manifest app.manifest -outputresource:dist\\VLauncher\\VLauncher-win_x64.exe;#1",
-    "build:app": "neu build && npm run sign:admin"
+    "build:app": "npm --prefix vite-src run check && node vite-src/node_modules/@neutralinojs/neu/bin/neu.js build",
+    "check": "npm --prefix vite-src run check",
+    "test": "npm --prefix vite-src test"
   }
 }

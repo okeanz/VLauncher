@@ -1,53 +1,108 @@
-import { MessageEvent } from 'ws';
-import { logError, logInfo } from './utils/logger.ts';
-import {
-  enableValheimOptimization,
-  disableValheimOptimization,
-} from './handlers/valheim-optimization.js';
-import process from 'process';
-import { receivedPong, setHeartbeatPause } from './websocket/heartbeat.js';
-import { fetchArchive } from './handlers/fetch-archive.js';
-import { mountSymlinks } from './handlers/mount-symlinks.js';
-import path from 'path';
-import { extensionCleanup } from './on-exit.js';
+import type { MessageEvent } from 'ws';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { Controller } from './controller.js';
+import { installRelease } from './updater.js';
+import { sendProgressEvent } from './ws-events/progress-events.js';
+import { receivedPong } from './websocket/heartbeat.js';
+import { shutdown } from './on-exit.js';
+import { setOptimization, getOptimization } from './utils/boot-config.js';
 
-export const messageHandler = async (e: MessageEvent) => {
+export const dataDirectory = path.join(process.env.LOCALAPPDATA || os.homedir(), 'VLauncher');
+let childRunning = false;
+export async function gameRunning() {
+  if (childRunning) return true;
+  const { stdout } = await promisify(execFile)(
+    'tasklist.exe',
+    ['/FO', 'CSV', '/NH', '/FI', 'IMAGENAME eq valheim.exe'],
+    { windowsHide: true },
+  );
+  return /^"valheim\.exe",/im.test(stdout);
+}
+export const controller = new Controller({
+  running: gameRunning,
+  notify: sendProgressEvent,
+  install: async (game, signal) => {
+    if (!path.isAbsolute(game)) throw new Error('Укажите абсолютный путь к игре');
+    if (!(await fs.stat(path.join(game, 'valheim.exe'))).isFile())
+      throw new Error('Valheim не найден');
+    const base = process.env.VITE_API_URL;
+    if (!base) throw new Error('Не настроен адрес сервера обновлений');
+    const releaseId = await installRelease(
+      game,
+      base,
+      path.join(dataDirectory, 'cache'),
+      signal,
+      (currentFile) => sendProgressEvent('installProgress', { currentFile }),
+    );
+    sendProgressEvent('optimizationReady', {
+      gamePath: game,
+      enabled: await getOptimization(game),
+    });
+    return releaseId;
+  },
+  launch: (game) =>
+    new Promise<void>((resolve, reject) => {
+      const child = spawn(path.join(game, 'valheim.exe'), [], {
+        cwd: game,
+        shell: false,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false,
+      });
+      child.once('error', reject);
+      child.once('spawn', () => {
+        childRunning = true;
+        child.unref();
+        resolve();
+      });
+      child.once('exit', () => {
+        childRunning = false;
+        sendProgressEvent('gameState', { running: false });
+      });
+    }),
+});
+export async function messageHandler(message: MessageEvent) {
   try {
-    // Не особо важно какое сообщение, если что-то пришло, значит app жив
-    receivedPong();
-    const { event, data } = JSON.parse(e.data as string);
-
-    if (event === 'LoadFiles') {
-      logInfo(`Processing LoadFiles...`);
-      // Дабы не делать воркеры, проще так тормознуть на время пинг-понг
-      setHeartbeatPause();
-
-      // Загружаем и распаковываем архивы
-      await fetchArchive('BepInEx');
-      await fetchArchive('patchers', 'BepInEx/BepInEx');
-      await fetchArchive('config', 'BepInEx/BepInEx');
-      await fetchArchive('plugins', 'BepInEx/BepInEx');
-
-      await mountSymlinks(path.resolve('./cache/unpacked/BepInEx'), data.valheimPath);
-      setHeartbeatPause(false);
+    const { event, data } = JSON.parse(String(message.data));
+    if (event === 'Hello') {
+      sendProgressEvent('extensionReady', {});
+      return;
     }
-
-    if (event === 'EnableValheimOptimization') {
-      await enableValheimOptimization(data.valheimPath);
+    if (event === 'pong') {
+      receivedPong();
+      return;
     }
-
-    if (event === 'DisableValheimOptimization') {
-      await disableValheimOptimization(data.valheimPath);
-    }
-
     if (event === 'terminate') {
-      logInfo(`Processing Terminate...`);
-      extensionCleanup();
-      setTimeout(() => {
-        process.exit(0);
-      }, 500);
+      await shutdown();
+      return;
     }
-  } catch (e) {
-    logError(e);
+    if (
+      [
+        'LoadFiles',
+        'LaunchGame',
+        'EnableValheimOptimization',
+        'DisableValheimOptimization',
+      ].includes(event)
+    ) {
+      if (typeof data?.valheimPath !== 'string' || !path.isAbsolute(data.valheimPath))
+        throw new Error('Неверный путь к игре');
+      if (event === 'LoadFiles') await controller.update(data.valheimPath);
+      else if (event === 'LaunchGame') await controller.launch(data.valheimPath);
+      else {
+        await controller.configure(async () => {
+          const enabled = event === 'EnableValheimOptimization';
+          await setOptimization(data.valheimPath, enabled);
+          sendProgressEvent('optimizationReady', { enabled, gamePath: data.valheimPath });
+        });
+      }
+    }
+  } catch (error) {
+    sendProgressEvent('operationError', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
-};
+}

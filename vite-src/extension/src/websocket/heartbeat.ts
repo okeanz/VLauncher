@@ -1,44 +1,23 @@
 import { makeSend } from './setup-ws.js';
-import WS from 'ws';
-import { logInfo } from '../utils/logger.js';
-
-let pingTimer: NodeJS.Timeout | null = null;
-let pongTimeout: NodeJS.Timeout | null = null;
-
-let heartbeatOnPause = false;
-
-const pingEvery = 5000;
-const checkEvery = 4000;
-
+import type WS from 'ws';
+import { shutdown } from '../on-exit.js';
+let timer: NodeJS.Timeout | undefined;
+let lastPong = Date.now();
 export function startHeartbeat(ws: WS) {
-  pingTimer = setInterval(() => {
-    const send = makeSend();
-    if (ws.readyState === ws.OPEN) {
-      send({ event: 'ping' });
-
-      // ждём pong не дольше 2 сек
-      if (pongTimeout) clearTimeout(pongTimeout);
-      pongTimeout = setTimeout(() => {
-        // Дабы не делать голову с воркерами - проще так
-        if (heartbeatOnPause) return;
-
-        logInfo('ping/pong failed, closing connection ...');
-        ws.close();
-        process.exit(0);
-      }, checkEvery);
+  stopHeartbeat();
+  lastPong = Date.now();
+  timer = setInterval(() => {
+    if (Date.now() - lastPong > 30000) {
+      void shutdown(1);
+      return;
     }
-  }, pingEvery);
+    if (ws.readyState === ws.OPEN) makeSend()({ event: 'ping', data: {} });
+  }, 5000);
 }
-
-export function stopHeartbeat() {
-  if (pingTimer) clearInterval(pingTimer);
-  if (pongTimeout) clearTimeout(pongTimeout);
-}
-
 export function receivedPong() {
-  if (pongTimeout) clearTimeout(pongTimeout);
+  lastPong = Date.now();
 }
-
-export function setHeartbeatPause(pause: boolean = true): void {
-  heartbeatOnPause = pause;
+export function stopHeartbeat() {
+  clearInterval(timer);
+  timer = undefined;
 }

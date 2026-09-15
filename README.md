@@ -1,49 +1,105 @@
-# Neutralinojs + Vite + React + Typescript
-A simple [React](https://react.dev/) template for building [Neutralinojs](https://neutralino.js.org/) apps with [Vite](https://vitejs.dev/) as bundler and [Typescript](https://www.typescriptlang.org/)
+# VLauncher
 
-valheim_Data -> Boot.Config
-gfx-enable-gfx-jobs=1
-gfx-enable-native-gfx-jobs=1
-vr-enabled=0
-scripting-runtime-version=latest
+Windows-лаунчер модифицированного Valheim: React/Neutralino, отдельное Node.js-расширение для установки и запуска игры. Расширение устанавливает обычные файлы: установленный модпак остаётся работоспособным после закрытия лаунчера.
 
+## Разработка и проверка
 
-## How to set up
-### Prerequisites
-All prerequisites of Neutralino, Vite, React and Typescript apply. You should have Neutralinojs CLI installed.
-### Setup with Neutralino CLI
-Create a new Neutralinojs project with this template with the following command:
-1. `neu create myapp --template Cloudwerk/neutralinojs-vite-react-ts`
-2. `cd myapp`
-3. Create a `.env` file with the content `VITE_GLOBAL_URL=http://localhost:3000/`
-### Manual Setup (with Neutralino CLI)
-1. Clone this repository
-2. Adjust the `modes.window.title` and `cli.binaryName` to your desired Application Name inside the `neutralino.config.json` file
-3. Open a Terminal inside the repos root
-4. run `neu update`
-5. run `cd vite-src`
-6. Adjust the `name` property to your desired Application Name inside the `package.json` file
-7. Create a `.env` file with the content `VITE_GLOBAL_URL=http://localhost:3000/`
-8. run `npm install`
+Нужны Windows x64 и Node.js 22.13+ (для инструментов сборки рекомендуется актуальная Node.js 22 LTS). Команды ниже — для **cmd.exe**.
 
-## Known Issues
-- When running the dev server with `neu run`, it spams the Terminal with `neu: INFO Global variables patch was reverted`
-
-## How to develop
-
-Start the React development server and Neutralinojs app:
-
-```bash
-neu run
+```bat
+cd vite-src
+npm ci
+copy .env.example .env
+rem Укажите в .env публичный VITE_API_URL вашего file-server.
+npm run check
+npm run build
 ```
 
-## How to bundle the app
+`check` проверяет TypeScript интерфейса, расширения и тестов, ESLint и тесты с контролем покрытия. HTML-отчёт: `vite-src/coverage/index.html`. `npm test` запускает тесты без отчёта; `npm run test:watch` — режим наблюдения. Все упаковщики объявлены в зависимостях; `package-lock.json` хранится в Git. Для разработки из корня проекта: `node vite-src/node_modules/@neutralinojs/neu/bin/neu.js run`.
 
-Trigger a new React build and create the application bundle with the following command:
-```bash
-neu build
+Полная сборка из корня проекта:
+
+```bat
+node vite-src/node_modules/@neutralinojs/neu/bin/neu.js update
+npm run build:app
 ```
 
-## License
+`neu update` загружает версии нативных бинарников из `neutralino.config.json` (нужен только при отсутствии/смене бинарников). Результат — `dist/`. Упаковка расширения использует Node.js 22 x64. Исходный `.env` в бинарник не включается; встраивается только публичный URL обновлений. Не помещайте секреты в `VITE_*`: эти значения доступны клиенту.
 
-[MIT](LICENSE)
+Проверить именно упакованное расширение:
+
+```bat
+cd vite-src
+set VLAUNCHER_TEST_PACKAGED=../extensions/extension.exe
+npm test -- tests/runtime.test.ts
+set VLAUNCHER_TEST_PACKAGED=
+```
+
+Это запускает расширение с тестовым WebSocket-сервером и временным профилем, проверяет протокол, одиночный экземпляр, отсутствие токенов в выводе и корректный выход. Настоящую игру тест не запускает.
+
+## Публикация модпака: новый обязательный контракт
+
+Обновлённый лаунчер требует `GET /files/launcher-manifest.json`. Старые изменяемые `/files/BepInEx.zip` и `/filesChecksum/...` не используются: они не гарантируют, что четыре архива принадлежат одному релизу.
+
+Подготовьте **завершённую, неизменяемую на время публикации сборку** из четырёх архивов:
+
+| Архив | Содержимое | Куда устанавливается |
+|---|---|---|
+| `BepInEx.zip` | `BepInEx/core/...`, `winhttp.dll`; при необходимости `doorstop_config.ini`, `.doorstop_version` | Корень игры |
+| `patchers.zip` | Файлы патчеров без внешнего каталога `patchers/` | `BepInEx/patchers/` |
+| `config.zip` | Конфиги без внешнего каталога `config/` | `BepInEx/config/` |
+| `plugins.zip` | Моды без внешнего каталога `plugins/` | `BepInEx/plugins/` |
+
+Для базового ZIP допускаются только перечисленные корневые пути. Linux-скрипты, `valheim.exe`, метаданные Thunderstore и прочие файлы в корне в клиентскую сборку не включайте. Пустые `patchers/config/plugins` допустимы в виде корректного пустого ZIP.
+
+Из корня проекта выполните:
+
+```bat
+node scripts/publish-release.mjs "D:\Builds\client-r1" "D:\file-server\served-files" "client-r1"
+```
+
+Второй путь — **фактический каталог, который ваш file-server раздаёт через `/files/`**, а не обязательно папка его исходников. Скрипт создаёт `releases/client-r1/*.zip`, вычисляет SHA-256 и размеры, затем атомарно переключает `launcher-manifest.json`. Повторное использование ID запрещено. Не запускайте публикацию над каталогом, в котором ещё собираются ZIP, и не изменяйте опубликованные версии. Текущий Express file-server может раздавать эти файлы своим обычным файловым маршрутом; отдельный API публикации не требуется. Старые релизы нужно сохранять, пока клиенты могут их скачивать.
+
+Пример элемента манифеста:
+
+```json
+{
+  "schemaVersion": 1,
+  "releaseId": "client-r1",
+  "archives": [
+    {
+      "name": "plugins",
+      "url": "files/releases/client-r1/plugins.zip",
+      "sha256": "64 строчные шестнадцатеричные цифры",
+      "size": 123456
+    }
+  ]
+}
+```
+
+В рабочем манифесте должны присутствовать все четыре имени ровно по одному разу. URL задаётся относительно `VITE_API_URL`, относится к тому же origin и каталогу релиза. HTTPS обязателен; HTTP разрешён только для localhost/127.0.0.1/::1. Сервер должен разрешать CORS для `/ping`, если нужен индикатор связи в интерфейсе. Сам установщик скачивает файлы через Node.js.
+
+**До публикации первого манифеста новая версия откажется обновлять модпак.** Публикацию на действующем сервере и изменение его HTTPS-конфигурации сборка лаунчера автоматически не выполняет.
+
+## Сохранность файлов и восстановление
+
+- Все ZIP сначала скачиваются, проверяются по размеру/SHA-256 и распаковываются в отдельный каталог. Редиректы, небезопасные пути, ссылки внутри ZIP, коллизии регистра и превышение лимитов отклоняются.
+- Перед изменением игры создаётся резервная копия затрагиваемых файлов и журнал транзакции в `<Valheim>/.vlauncher/`. Ошибка записи или отмена вызывает откат. После аварийного завершения следующий запуск установки сначала восстанавливает незавершённую транзакцию, ещё до сетевых запросов.
+- Удаляются только устаревшие файлы, отмеченные в предыдущем `installed.json` как управляемые лаунчером. Посторонние файлы сохраняются. Файлы с совпадающими путями в новом модпаке заменяются с резервной копией.
+- Повторная проверка неизменившегося релиза не создаёт дубликаты резервных копий. Копии изменённых файлов хранятся в `.vlauncher/backup-*`; автоматического удаления истории пока нет. Перед ручной очисткой старых копий убедитесь, что `journal.json` отсутствует и новый релиз работает. Кэш находится в `%LOCALAPPDATA%/VLauncher/cache`.
+- Игра не запускается до успешной установки. Обновление/оптимизация запрещены при запущенном `valheim.exe`; операции выполняются последовательно. Проверка процесса не защищает от запуска игры вручную извне ровно в середине установки — на время обновления держите игру закрытой.
+- Boot.config сохраняется рядом как `boot.config.vlauncher-backup`. Выключение оптимизации восстанавливает исходный файл; если его изменил Steam или другой инструмент, лаунчер сообщает конфликт и сохраняет обе версии для ручного разбора.
+
+Журнал обеспечивает восстановление после прерывания процесса. Это не гарантия от аппаратного повреждения диска или потери несброшенных файлов при отключении питания.
+
+## Переход со старой версии
+
+Закройте старый лаунчер и игру перед обновлением. Старый лаунчер создавал ссылки в папке игры; новая версия **не удаляет и не разыменовывает неизвестные ссылки автоматически**. Если они остались, ошибка укажет конкретный путь. Проверьте цель ссылки, сохраните нужные файлы и замените её обычной папкой/файлом вручную. Не удаляйте каталоги-цели ссылок. После этого повторите установку.
+
+Лаунчер больше не требует постоянного запуска от администратора. Папка игры должна быть доступна пользователю на запись. Если она защищена Windows, используйте Steam-библиотеку с подходящими правами либо явно запустите лаунчер с повышением прав для установки. Отладочный инспектор отключён; нативные API ограничены используемыми методами.
+
+## Границы автоматической проверки
+
+Набор тестов охватывает архивы, HTTP и кэш, транзакции/откат, публикацию релизов, блокировку экземпляров, поиск Steam-библиотек, Boot.config, контроллер, WebSocket/heartbeat/выход, Redux и интерактивные компоненты. Временные игровые папки и сетевые серверы создаются тестами; пользовательский Valheim не изменяется. Пороги покрытия относятся к функциональной логике из `vitest.config.ts`, а не ко всем строкам репозитория.
+
+Перед распространением остаётся ручной smoke-test на настоящей игре: установка реального модпака, запуск через Steam/Valheim, подключение к серверу, UAC для защищённой библиотеки и повторный запуск после закрытия окна. Прохождение автоматических тестов не подменяет эту проверку.

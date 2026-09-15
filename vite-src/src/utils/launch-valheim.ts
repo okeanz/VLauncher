@@ -1,17 +1,12 @@
-import { logInfo } from '@/utils/logInfo.ts';
-import Neutralino from '@neutralinojs/lib';
-
-export async function launchValheim(gamePath: string) {
+import { extensions } from '@neutralinojs/lib';
+import { store } from '@/shared/store';
+import { canLaunch, setLaunching, setError } from '@/features/progress/progress.slice';
+export async function launchValheim(valheimPath: string) {
+  if (!canLaunch(store.getState().progress, valheimPath)) return;
+  store.dispatch(setLaunching(true));
   try {
-    // путь до exe-файла
-    const exePath = gamePath.replace(/\\/g, '\\\\') + '\\\\valheim.exe';
-
-    // запускаем процесс
-    const proc = await Neutralino.os.spawnProcess(exePath);
-    logInfo(`Valheim запущен. PID: ${proc.id}`);
-    return proc.id;
-  } catch (err) {
-    logInfo(`Ошибка запуска Valheim: ${(err as Error).message}`);
-    return null;
+    await extensions.dispatch('fileLoader', 'LaunchGame', { valheimPath });
+  } catch {
+    store.dispatch(setError('Не удалось отправить команду запуска'));
   }
 }

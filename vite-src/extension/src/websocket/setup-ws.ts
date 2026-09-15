@@ -1,5 +1,5 @@
 import { logError, logInfo } from '../utils/logger.ts';
-import process from 'process';
+import { shutdown } from '../on-exit.js';
 import WS from 'ws';
 import { messageHandler } from '../message-handler.ts';
 import { randomUUID } from 'crypto';
@@ -17,7 +17,9 @@ let accessToken: string;
 
 export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParams) => {
   try {
-    client = new WS(`ws://127.0.0.1:${NL_PORT}?extensionId=${NL_EXTID}&connectToken=${NL_CTOKEN}`);
+    client = new WS(
+      `ws://127.0.0.1:${NL_PORT}?extensionId=${encodeURIComponent(NL_EXTID)}&connectToken=${encodeURIComponent(NL_CTOKEN)}`,
+    );
     accessToken = NL_TOKEN;
 
     logInfo('START');
@@ -30,21 +32,20 @@ export const setupWs = ({ NL_PORT, NL_CTOKEN, NL_TOKEN, NL_EXTID }: setupWsParam
     client.onclose = () => {
       logInfo('Connection closed!');
       stopHeartbeat();
-      process.exit(0);
+      void shutdown();
     };
 
-    client.onerror = (e) => {
+    client.onerror = () => {
       logInfo('Connection error!2');
-      logInfo(e.message);
-      logInfo(e.type);
-      logInfo(e.error);
+
       stopHeartbeat();
-      process.exit(0);
+      void shutdown();
     };
 
     client.onmessage = messageHandler;
-  } catch (e) {
-    logError(e);
+  } catch {
+    logError('Unable to connect extension');
+    void shutdown(1);
   }
 };
 
@@ -52,7 +53,7 @@ export const makeSend =
   (event: 'extensionToApp' | 'log' = 'extensionToApp') =>
   (data: object | string) => {
     try {
-      if (!client || !accessToken) return;
+      if (!client || !accessToken || client.readyState !== WS.OPEN) return;
 
       const msg = JSON.stringify({
         id: randomUUID(),

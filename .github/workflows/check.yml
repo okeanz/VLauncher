@@ -1,0 +1,23 @@
+name: Verify launcher
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vite-src
+    env:
+      VITE_API_URL: http://127.0.0.1:3001/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vite-src/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm test -- tests/runtime.test.ts
+        env:
+          VLAUNCHER_TEST_PACKAGED: ../extensions/extension.exe

@@ -48,4 +48,6 @@ vite-src/.env
 .env.*
 *.tsbuildinfo
 
-package-lock.json
+coverage/
+.test-tmp/
+!.env.example

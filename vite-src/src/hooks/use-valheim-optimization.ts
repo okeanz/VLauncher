@@ -1,43 +1,33 @@
-import { useCallback } from 'react';
-import { useSelector } from 'react-redux';
 import { extensions } from '@neutralinojs/lib';
-import { valheimOptimizationSelector, valheimPathSelector, valheimPathValidSelector } from '@/features/settings/settings.slice.ts';
-import { setValheimOptimization } from '@/features/settings/settings.actions.ts';
-import { useAppDispatch } from '@/shared/store/types.ts';
-
-/**
- * Хук для управления оптимизацией Valheim
- */
+import { useAppDispatch, useAppSelector } from '@/shared/store/types';
+import { setConfiguring, setError } from '@/features/progress/progress.slice';
 export const useValheimOptimization = () => {
   const dispatch = useAppDispatch();
-
-  const valheimOptimization = useSelector(valheimOptimizationSelector);
-  const valheimPath = useSelector(valheimPathSelector);
-  const valheimPathValid = useSelector(valheimPathValidSelector);
-
-  const handleOptimizationChange = useCallback(async (checked: boolean) => {
-    if (!valheimPathValid || !valheimPath) {
-      return;
-    }
-
+  const settings = useAppSelector((s) => s.settings);
+  const progress = useAppSelector((s) => s.progress);
+  const available =
+    settings.valheimPathValid &&
+    progress.connected &&
+    !progress.isLoading &&
+    !progress.running &&
+    !progress.launching &&
+    !progress.configuring;
+  const handleOptimizationChange = async (enabled: boolean) => {
+    if (!available) return;
+    dispatch(setConfiguring(true));
     try {
-      // Отправляем команду в расширение
-      const event = checked ? 'EnableValheimOptimization' : 'DisableValheimOptimization';
-
-      await extensions.dispatch('fileLoader', event, {
-        valheimPath: valheimPath
-      });
-
-      // Обновляем состояние только после успешной отправки
-      dispatch(setValheimOptimization(checked));
-    } catch (error) {
-      console.error('Error toggling optimization:', error);
+      await extensions.dispatch(
+        'fileLoader',
+        enabled ? 'EnableValheimOptimization' : 'DisableValheimOptimization',
+        { valheimPath: settings.valheimPath },
+      );
+    } catch {
+      dispatch(setError('Не удалось изменить настройки'));
     }
-  }, [dispatch, valheimPath, valheimPathValid]);
-
+  };
   return {
-    valheimOptimization,
-    valheimPathValid,
-    handleOptimizationChange
+    valheimOptimization: settings.valheimOptimization,
+    valheimPathValid: available,
+    handleOptimizationChange,
   };
 };

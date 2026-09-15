@@ -1,86 +1,43 @@
-import fs from 'fs';
-import { lock as lockCb, unlock as unlockCb } from 'pidlockfile';
-
-function lock(filename: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    lockCb(filename, (err) => (err ? reject(err) : resolve()));
-  });
-}
-
-function unlock(filename: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    unlockCb(filename, (err) => (err ? reject(err) : resolve()));
-  });
-}
-
-/**
- * Гарантирует один инстанс: если старый жив — завершает его и продолжает.
- */
-export async function ensureSingleInstance(
-  pidFile: string,
-  externalCleanup: () => void,
-): Promise<void> {
-  try {
-    console.log('locking');
-    await lock(pidFile);
-  } catch {
-
-    const oldPid = parseInt(fs.readFileSync(pidFile, 'utf-8'));
-    console.log('old process running', oldPid);
-    if (!isNaN(oldPid)) {
-      try {
-        console.error(`Found running process`, oldPid);
-        process.kill(oldPid, 'SIGTERM');
-        await unlock(pidFile);
-        await lock(pidFile);
-      } catch (e) {
-        // ESRCH/EPERM — игнорируем (битый PID или нет прав)
-        console.error(`Cant kill`, e);
-      }
+import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
+export async function acquireLock(
+  file: string,
+  alive: (pid: number) => boolean = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code !== 'ESRCH';
+    }
+  },
+) {
+  const token = crypto.randomUUID();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await fs.writeFile(file, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      const raw = await fs.readFile(file, 'utf8');
+      const owner = JSON.parse(raw);
+      if (
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        typeof owner.token !== 'string' ||
+        alive(owner.pid) ||
+        attempt
+      )
+        throw new Error('VLauncher уже запущен или файл блокировки требует проверки');
+      if ((await fs.readFile(file, 'utf8')) !== raw) throw new Error('Lock ownership changed');
+      await fs.unlink(file);
     }
   }
-
-  console.log(`Started instance: ${process.pid}`);
-
-  // Идемпотентная синхронная очистка
-  let cleaned = false;
-  const cleanupSync = () => {
-    if (cleaned) return;
-    cleaned = true;
+  return async () => {
     try {
-      fs.unlinkSync(pidFile);
-      fs.rmSync(pidFile);
-      externalCleanup();
-    } catch {
-      /* empty */
-    } // ENOENT — ок
+      const owner = JSON.parse(await fs.readFile(file, 'utf8'));
+      if (owner.token === token) await fs.unlink(file);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
   };
-
-  // Сигналы: чистим и выходим
-  const stop = () => {
-    console.log(`Received sigterm, cleaning up ...`);
-
-    cleanupSync();
-    process.exit(0);
-  };
-  process.on('SIGINT', stop);
-  process.on('SIGTERM', stop);
-  process.on('SIGHUP', stop);
-
-  // Аварийные случаи
-  process.on('uncaughtException', (err) => {
-    console.error(err);
-    cleanupSync();
-    process.exit(1);
-  });
-  process.on('unhandledRejection', (err) => {
-    console.error(err);
-    cleanupSync();
-    process.exit(1);
-  });
-
-  // Финальный fallback (может сработать после сигналов — безопасно, т.к. идемпотентно)
-  process.on('exit', () => {
-    cleanupSync();
-  });
 }

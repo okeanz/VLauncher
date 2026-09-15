@@ -1,29 +1,43 @@
-import fs from 'fs';
-import process from 'process';
-
-import { setupWs } from './websocket/setup-ws.ts';
-import { logInfo } from './utils/logger.ts';
-import { extensionCleanup } from './on-exit.js';
-import { ensureSingleInstance } from './types/pidlock-promise.js';
-import { loadEnv } from './load-env.js';
-
-loadEnv();
-
-logInfo('Starting extension...');
-logInfo(`ENV: ${process.env.VITE_API_URL}`);
-
-ensureSingleInstance('./lockfile', extensionCleanup).then(() => {
-  logInfo('Awaiting input...');
-
-  // Obtain required params to start a WS connection from stdIn.
-  const processInput = JSON.parse(fs.readFileSync(process.stdin.fd, 'utf-8'));
-
-  const NL_PORT = processInput.nlPort;
-  const NL_TOKEN = processInput.nlToken;
-  const NL_CTOKEN = processInput.nlConnectToken;
-  const NL_EXTID = processInput.nlExtensionId;
-
-  logInfo(`input: ${JSON.stringify(processInput)}`);
-
-  setupWs({ NL_PORT, NL_TOKEN, NL_EXTID, NL_CTOKEN });
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { setupWs } from './websocket/setup-ws.js';
+import { acquireLock } from './types/pidlock-promise.js';
+import { shutdown, setLockRelease } from './on-exit.js';
+import { dataDirectory } from './message-handler.js';
+async function start() {
+  await fsp.mkdir(dataDirectory, { recursive: true });
+  setLockRelease(await acquireLock(path.join(dataDirectory, 'instance.lock')));
+  const input = JSON.parse(fs.readFileSync(process.stdin.fd, 'utf8'));
+  if (
+    !Number.isInteger(Number(input.nlPort)) ||
+    Number(input.nlPort) < 1 ||
+    Number(input.nlPort) > 65535 ||
+    ![input.nlToken, input.nlConnectToken, input.nlExtensionId].every(
+      (v) => typeof v === 'string' && v.length > 0,
+    )
+  )
+    throw new Error('Invalid extension connection parameters');
+  setupWs({
+    NL_PORT: input.nlPort,
+    NL_TOKEN: input.nlToken,
+    NL_CTOKEN: input.nlConnectToken,
+    NL_EXTID: input.nlExtensionId,
+  });
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const)
+  process.on(signal, () => {
+    void shutdown();
+  });
+process.on('uncaughtException', (error) => {
+  console.error(error.message);
+  void shutdown(1);
+});
+process.on('unhandledRejection', (error) => {
+  console.error(error instanceof Error ? error.message : 'Unhandled rejection');
+  void shutdown(1);
+});
+start().catch((error) => {
+  console.error(error.message);
+  void shutdown(1);
 });
