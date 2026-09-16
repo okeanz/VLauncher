@@ -7,11 +7,87 @@ import { pipeline } from 'node:stream/promises';
 import AdmZip from 'adm-zip';
 
 export const archiveNames = ['BepInEx', 'patchers', 'config', 'plugins'] as const;
-export type Manifest = {
+export type ReleaseInfo = {
+  releaseId: string;
+  title: string | null;
+  gameVersion: string | null;
+  createdAt: string | null;
+  activatedAt: string | null;
+};
+export type Manifest = Partial<Omit<ReleaseInfo, 'releaseId'>> & {
   schemaVersion: 1;
   releaseId: string;
   archives: { name: string; url: string; sha256: string; size: number }[];
 };
+const optionalText = (value: unknown, max: number) =>
+  typeof value === 'string' && value.length <= max && ![...value].some((c) => c.charCodeAt(0) < 32)
+    ? value
+    : null;
+export const releaseInfo = (m: Manifest): ReleaseInfo => ({
+  releaseId: m.releaseId,
+  title: m.title ?? null,
+  gameVersion: m.gameVersion ?? null,
+  createdAt: m.createdAt ?? null,
+  activatedAt: m.activatedAt ?? null,
+});
+export type LauncherServer = {
+  id: string;
+  kind: 'main' | 'test';
+  name: string;
+  /** host:port for Valheim's +connect; null when the server does not publish one. */
+  address: string | null;
+  running: boolean | null;
+  releaseId: string | null;
+  manifest: string;
+};
+const serverId = /^(main|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/;
+export const validServerId = (id: unknown): id is string =>
+  typeof id === 'string' && serverId.test(id);
+const manifestPathOf = (id: string) =>
+  id === 'main' ? 'files/launcher-manifest.json' : `files/servers/${id}/launcher-manifest.json`;
+/** Panels older than the server list publish only the main server. */
+export const fallbackServers: LauncherServer[] = [
+  {
+    id: 'main',
+    kind: 'main',
+    name: 'Основной сервер',
+    address: null,
+    running: null,
+    releaseId: null,
+    manifest: manifestPathOf('main'),
+  },
+];
+export function validateServers(value: unknown): LauncherServer[] {
+  const list = (value as { schemaVersion?: number; servers?: unknown[] })?.servers;
+  if ((value as { schemaVersion?: number })?.schemaVersion !== 1 || !Array.isArray(list))
+    throw new Error('Invalid server list');
+  const seen = new Set<string>();
+  const servers = list.slice(0, 50).map((raw) => {
+    const s = raw as Record<string, unknown>;
+    if (!validServerId(s.id) || seen.has(s.id)) throw new Error('Invalid server id');
+    seen.add(s.id);
+    // The manifest location is derived from the id, never taken from the server as a free URL.
+    if (s.manifest !== manifestPathOf(s.id)) throw new Error('Invalid server manifest path');
+    const address =
+      typeof s.address === 'string' && /^[A-Za-z0-9.-]{1,253}:\d{1,5}$/.test(s.address)
+        ? s.address
+        : null;
+    return {
+      id: s.id,
+      kind: s.id === 'main' ? 'main' : 'test',
+      name: optionalText(s.name, 64) || (s.id === 'main' ? 'Основной сервер' : 'Тестовый сервер'),
+      address,
+      running: typeof s.running === 'boolean' ? s.running : null,
+      releaseId:
+        typeof s.releaseId === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(s.releaseId)
+          ? s.releaseId
+          : null,
+      manifest: s.manifest,
+    } satisfies LauncherServer;
+  });
+  if (!servers.some((s) => s.id === 'main')) throw new Error('Server list has no main server');
+  return servers;
+}
 const roots = new Set(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']);
 const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 export function safeRelative(name: string): string {
@@ -68,7 +144,14 @@ export function validateManifest(value: unknown, base: string): Manifest {
       throw new Error('Archive URL must belong to this immutable release');
     seen.add(a.name);
   }
-  return m;
+  // Display-only metadata from older servers may be absent; never let it carry arbitrary data.
+  return {
+    ...m,
+    title: optionalText(m.title, 300),
+    gameVersion: optionalText(m.gameVersion, 40),
+    createdAt: optionalText(m.createdAt, 40),
+    activatedAt: optionalText(m.activatedAt, 40),
+  };
 }
 export async function hashFile(file: string): Promise<string> {
   const hash = crypto.createHash('sha256');
@@ -297,14 +380,7 @@ export function isTrustedHttpHost(hostname: string): boolean {
   const [a, b] = [Number(m[1]), Number(m[2])];
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
-export async function installRelease(
-  game: string,
-  base: string,
-  cache: string,
-  signal: AbortSignal,
-  progress: (text: string) => void = () => {},
-  request: typeof fetch = fetch,
-) {
+function baseUrlOf(base: string) {
   const baseUrl = new URL(base.endsWith('/') ? base : base + '/');
   if (
     !(
@@ -315,19 +391,60 @@ export async function installRelease(
     throw new Error(
       'File server requires HTTPS (HTTP is allowed only on localhost or private LAN addresses)',
     );
-  async function get(url: string) {
-    signal.throwIfAborted();
-    const response = await request(url, {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
-      redirect: 'error',
-      cache: 'no-store',
-    });
-    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-    return response;
-  }
+  return baseUrl;
+}
+async function download(url: string, signal: AbortSignal, request: typeof fetch) {
+  signal.throwIfAborted();
+  const response = await request(url, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+    redirect: 'error',
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+  return response;
+}
+/** Reads the release currently published by the server without touching the game folder. */
+export async function fetchManifest(
+  base: string,
+  signal: AbortSignal,
+  request: typeof fetch = fetch,
+  server = 'main',
+): Promise<Manifest> {
+  if (!validServerId(server)) throw new Error('Invalid server id');
+  const baseUrl = baseUrlOf(base);
+  const response = await download(new URL(manifestPathOf(server), baseUrl).href, signal, request);
+  return validateManifest(await response.json(), baseUrl.href);
+}
+export async function fetchServers(
+  base: string,
+  signal: AbortSignal,
+  request: typeof fetch = fetch,
+): Promise<LauncherServer[]> {
+  const baseUrl = baseUrlOf(base);
+  signal.throwIfAborted();
+  const response = await request(new URL('files/servers.json', baseUrl).href, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+    redirect: 'error',
+    cache: 'no-store',
+  });
+  if (response.status === 404) return fallbackServers;
+  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+  return validateServers(await response.json());
+}
+export async function installRelease(
+  game: string,
+  base: string,
+  cache: string,
+  signal: AbortSignal,
+  progress: (text: string) => void = () => {},
+  request: typeof fetch = fetch,
+  server = 'main',
+) {
+  const baseUrl = baseUrlOf(base);
+  const get = (url: string) => download(url, signal, request);
   await recover(game);
-  const response = await get(new URL('files/launcher-manifest.json', baseUrl).href);
-  const manifest = validateManifest(await response.json(), baseUrl.href);
+  const manifest = await fetchManifest(baseUrl.href, signal, request, server);
+  progress('Ревизия ' + manifest.releaseId);
   await fs.mkdir(cache, { recursive: true });
   const work = await fs.mkdtemp(path.join(cache, 'install-'));
   const stage = path.join(work, 'stage');
@@ -369,7 +486,7 @@ export async function installRelease(
     signal.throwIfAborted();
     progress('Установка проверенных файлов');
     await commitInstall(game, stage, manifest.releaseId, signal);
-    return manifest.releaseId;
+    return releaseInfo(manifest);
   } finally {
     await fs.rm(work, { recursive: true, force: true });
   }

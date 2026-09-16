@@ -5,7 +5,13 @@ import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Controller } from './controller.js';
-import { installRelease } from './updater.js';
+import {
+  installRelease,
+  fetchManifest,
+  fetchServers,
+  releaseInfo,
+  validServerId,
+} from './updater.js';
 import { sendProgressEvent } from './ws-events/progress-events.js';
 import { receivedPong } from './websocket/heartbeat.js';
 import { shutdown } from './on-exit.js';
@@ -22,31 +28,68 @@ export async function gameRunning() {
   );
   return /^"valheim\.exe",/im.test(stdout);
 }
+function apiBase() {
+  const base = process.env.VITE_API_URL;
+  if (!base) throw new Error('Не настроен адрес сервера обновлений');
+  return base;
+}
+async function findServer(id: string) {
+  const server = (await fetchServers(apiBase(), AbortSignal.timeout(15000))).find(
+    (s) => s.id === id,
+  );
+  if (!server) throw new Error('Выбранного сервера больше нет, выберите другой');
+  return server;
+}
+export const releasePollInterval = 30000;
+let releaseTimer: ReturnType<typeof setInterval> | undefined;
+let selectedServer = 'main';
+async function pollServers() {
+  try {
+    sendProgressEvent('serverList', {
+      servers: await fetchServers(apiBase(), AbortSignal.timeout(15000)),
+    });
+  } catch {
+    sendProgressEvent('serverList', { servers: null });
+  }
+  await controller.checkRelease(selectedServer);
+}
+export function watchRelease() {
+  void pollServers();
+  if (releaseTimer) return;
+  releaseTimer = setInterval(() => void pollServers(), releasePollInterval);
+  releaseTimer.unref();
+}
 export const controller = new Controller({
   running: gameRunning,
   notify: sendProgressEvent,
-  install: async (game, signal) => {
+  install: async (game, server, signal) => {
     if (!path.isAbsolute(game)) throw new Error('Укажите абсолютный путь к игре');
     if (!(await fs.stat(path.join(game, 'valheim.exe'))).isFile())
       throw new Error('Valheim не найден');
-    const base = process.env.VITE_API_URL;
-    if (!base) throw new Error('Не настроен адрес сервера обновлений');
-    const releaseId = await installRelease(
+    const release = await installRelease(
       game,
-      base,
+      apiBase(),
       path.join(dataDirectory, 'cache'),
       signal,
       (currentFile) => sendProgressEvent('installProgress', { currentFile }),
+      fetch,
+      server,
     );
     sendProgressEvent('optimizationReady', {
       gamePath: game,
       enabled: await getOptimization(game),
     });
-    return releaseId;
+    return release;
   },
-  launch: (game) =>
-    new Promise<void>((resolve, reject) => {
-      const child = spawn(path.join(game, 'valheim.exe'), [], {
+  currentRelease: async (server) =>
+    releaseInfo(await fetchManifest(apiBase(), AbortSignal.timeout(15000), fetch, server)),
+  launch: async (game, id) => {
+    const server = await findServer(id);
+    if (server.running === false) throw new Error(`Сервер «${server.name}» остановлен`);
+    // Valheim joins host:port passed as +connect right after the main menu loads.
+    const args = server.address ? ['+connect', server.address] : [];
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(path.join(game, 'valheim.exe'), args, {
         cwd: game,
         shell: false,
         detached: true,
@@ -63,13 +106,15 @@ export const controller = new Controller({
         childRunning = false;
         sendProgressEvent('gameState', { running: false });
       });
-    }),
+    });
+  },
 });
 export async function messageHandler(message: MessageEvent) {
   try {
     const { event, data } = JSON.parse(String(message.data));
     if (event === 'Hello') {
       sendProgressEvent('extensionReady', {});
+      watchRelease();
       return;
     }
     if (event === 'pong') {
@@ -78,6 +123,12 @@ export async function messageHandler(message: MessageEvent) {
     }
     if (event === 'terminate') {
       await shutdown();
+      return;
+    }
+    if (event === 'SelectServer') {
+      if (!validServerId(data?.serverId)) throw new Error('Неверный сервер');
+      selectedServer = data.serverId;
+      void pollServers();
       return;
     }
     if (
@@ -90,9 +141,12 @@ export async function messageHandler(message: MessageEvent) {
     ) {
       if (typeof data?.valheimPath !== 'string' || !path.isAbsolute(data.valheimPath))
         throw new Error('Неверный путь к игре');
-      if (event === 'LoadFiles') await controller.update(data.valheimPath);
-      else if (event === 'LaunchGame') await controller.launch(data.valheimPath);
-      else {
+      if (event === 'LoadFiles' || event === 'LaunchGame') {
+        const server = data.serverId ?? 'main';
+        if (!validServerId(server)) throw new Error('Неверный сервер');
+        if (event === 'LoadFiles') await controller.update(data.valheimPath, server);
+        else await controller.launch(data.valheimPath, server);
+      } else {
         await controller.configure(async () => {
           const enabled = event === 'EnableValheimOptimization';
           await setOptimization(data.valheimPath, enabled);

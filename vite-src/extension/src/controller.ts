@@ -1,14 +1,18 @@
+import type { ReleaseInfo } from './updater.js';
 export class Controller {
   private busy = false;
   private readyPath = '';
+  private readyRelease = '';
+  private readyServer = '';
   private aborter?: AbortController;
   private pending?: Promise<void>;
   private stopping = false;
   constructor(
     private deps: {
-      install: (game: string, signal: AbortSignal) => Promise<unknown>;
+      install: (game: string, server: string, signal: AbortSignal) => Promise<ReleaseInfo>;
+      currentRelease: (server: string) => Promise<ReleaseInfo>;
       running: () => Promise<boolean>;
-      launch: (game: string) => Promise<void>;
+      launch: (game: string, server: string) => Promise<void>;
       notify: (event: string, data: object) => void;
     },
   ) {}
@@ -19,7 +23,7 @@ export class Controller {
       try {
         await action();
       } catch (error) {
-        this.readyPath = '';
+        this.forget();
         this.deps.notify('operationError', {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -29,24 +33,47 @@ export class Controller {
     })();
     await this.pending;
   }
-  async update(game: string) {
+  private forget() {
+    this.readyPath = '';
+    this.readyRelease = '';
+    this.readyServer = '';
+  }
+  async update(game: string, server = 'main') {
     await this.run(async () => {
-      this.readyPath = '';
+      this.forget();
       this.aborter = new AbortController();
-      this.deps.notify('installStarted', { gamePath: game });
+      this.deps.notify('installStarted', { gamePath: game, serverId: server });
       if (await this.deps.running()) throw new Error('Закройте Valheim перед обновлением');
-      await this.deps.install(game, this.aborter.signal);
+      const release = await this.deps.install(game, server, this.aborter.signal);
       this.aborter.signal.throwIfAborted();
       this.readyPath = game;
-      this.deps.notify('installReady', { gamePath: game });
+      this.readyRelease = release.releaseId;
+      this.readyServer = server;
+      this.deps.notify('serverRelease', { serverId: server, release });
+      this.deps.notify('installReady', {
+        gamePath: game,
+        releaseId: release.releaseId,
+        serverId: server,
+      });
     });
   }
-  async launch(game: string) {
+  async launch(game: string, server = 'main') {
     await this.run(async () => {
-      if (!this.readyPath || game !== this.readyPath)
+      if (!this.readyPath || game !== this.readyPath || server !== this.readyServer)
         throw new Error('Сначала завершите установку модпака');
       if (await this.deps.running()) throw new Error('Valheim уже запущен');
-      await this.deps.launch(game);
+      // The server may have rolled out a new revision since the last installation.
+      const release = await this.deps.currentRelease(server).catch(() => {
+        throw new Error('Не удалось проверить ревизию модпака на сервере');
+      });
+      this.deps.notify('serverRelease', { serverId: server, release });
+      if (release.releaseId !== this.readyRelease) {
+        this.forget();
+        throw new Error(
+          `На сервере новая ревизия модпака ${release.releaseId}, сначала обновите моды`,
+        );
+      }
+      await this.deps.launch(game, server);
       this.deps.notify('gameState', { running: true });
     });
   }
@@ -55,6 +82,16 @@ export class Controller {
       if (await this.deps.running()) throw new Error('Закройте Valheim перед изменением настроек');
       await action();
     });
+  }
+  /** Read-only poll of the published revision; allowed alongside other operations. */
+  async checkRelease(server = 'main') {
+    if (this.stopping) return;
+    try {
+      const release = await this.deps.currentRelease(server);
+      this.deps.notify('serverRelease', { serverId: server, release });
+    } catch {
+      this.deps.notify('serverRelease', { serverId: server, release: null });
+    }
   }
   async stop() {
     this.stopping = true;

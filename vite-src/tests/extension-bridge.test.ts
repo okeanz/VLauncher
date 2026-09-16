@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageEvent } from 'ws';
 import { EventEmitter } from 'node:events';
 const mocks = vi.hoisted(() => ({
-  install: vi.fn(async () => {}),
+  install: vi.fn(async () => ({
+    releaseId: 'r1',
+    title: null,
+    gameVersion: null,
+    createdAt: null,
+    activatedAt: null,
+  })),
   optimize: vi.fn(async () => {}),
   stat: vi.fn(async () => ({ isFile: (): boolean => true })),
   notify: vi.fn(),
@@ -10,8 +16,25 @@ const mocks = vi.hoisted(() => ({
   shutdown: vi.fn(async () => {}),
   spawn: vi.fn(),
   execFile: vi.fn(),
+  servers: vi.fn(async () => [
+    {
+      id: 'main',
+      kind: 'main',
+      name: 'Main',
+      address: null as string | null,
+      running: true,
+      releaseId: 'r1',
+    },
+  ]),
 }));
-vi.mock('../extension/src/updater', () => ({ installRelease: mocks.install }));
+vi.mock('../extension/src/updater', () => ({
+  installRelease: mocks.install,
+  fetchManifest: mocks.install,
+  fetchServers: mocks.servers,
+  releaseInfo: (m: unknown) => m,
+  validServerId: (id: unknown) =>
+    typeof id === 'string' && /^(main|[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(id),
+}));
 vi.mock('../extension/src/utils/boot-config', () => ({
   setOptimization: mocks.optimize,
   getOptimization: vi.fn(async () => false),
@@ -35,7 +58,16 @@ beforeEach(() => {
     callback(null, { stdout: '' }),
   );
   mocks.stat.mockResolvedValue({ isFile: () => true });
-  mocks.install.mockResolvedValue();
+  mocks.servers.mockResolvedValue([
+    { id: 'main', kind: 'main', name: 'Main', address: null, running: true, releaseId: 'r1' },
+  ]);
+  mocks.install.mockResolvedValue({
+    releaseId: 'r1',
+    title: null,
+    gameVersion: null,
+    createdAt: null,
+    activatedAt: null,
+  });
   mocks.optimize.mockResolvedValue();
 });
 describe('extension commands', () => {
@@ -70,8 +102,48 @@ describe('extension commands', () => {
       expect.stringContaining('cache'),
       expect.any(AbortSignal),
       expect.any(Function),
+      expect.any(Function),
+      'main',
     );
-    expect(mocks.notify).toHaveBeenCalledWith('installReady', { gamePath: 'C:/Game' });
+    expect(mocks.notify).toHaveBeenCalledWith('installReady', {
+      gamePath: 'C:/Game',
+      releaseId: 'r1',
+      serverId: 'main',
+    });
+  });
+  it('installs and joins the selected test server, refusing a stopped one', async () => {
+    const { send } = await fixture();
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    });
+    const test = {
+      id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      kind: 'test',
+      name: 'Проверка',
+      address: '192.168.50.181:2458',
+      running: false,
+      releaseId: 'r1',
+    };
+    mocks.servers.mockResolvedValue([test]);
+    await send('LoadFiles', { valheimPath: 'C:/Game', serverId: test.id });
+    expect(mocks.install.mock.calls[0]).toContain(test.id);
+    await send('LaunchGame', { valheimPath: 'C:/Game', serverId: test.id });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith('operationError', {
+      error: 'Сервер «Проверка» остановлен',
+    });
+    mocks.servers.mockResolvedValue([{ ...test, running: true }]);
+    await send('LoadFiles', { valheimPath: 'C:/Game', serverId: test.id });
+    await send('LaunchGame', { valheimPath: 'C:/Game', serverId: test.id });
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.stringMatching(/valheim.exe$/),
+      ['+connect', '192.168.50.181:2458'],
+      expect.objectContaining({ shell: false }),
+    );
+    await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
+    expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
   });
   it('does not write into a folder without valheim.exe', async () => {
     const { send } = await fixture();

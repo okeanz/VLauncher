@@ -1,7 +1,29 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+export type ServerRelease = {
+  releaseId: string;
+  title: string | null;
+  gameVersion: string | null;
+  createdAt: string | null;
+  activatedAt: string | null;
+};
+export type LauncherServer = {
+  id: string;
+  kind: 'main' | 'test';
+  name: string;
+  address: string | null;
+  running: boolean | null;
+  releaseId: string | null;
+};
 export const initialState = {
   isLoading: false,
   readyPath: '',
+  readyRelease: '',
+  /** Revision currently published by the server; null while unknown or unreachable. */
+  serverRelease: null as ServerRelease | null,
+  /** Servers published by the panel; null until the first successful poll. */
+  servers: null as LauncherServer[] | null,
+  selectedServer: 'main',
+  readyServer: '',
   requestedPath: '',
   running: false,
   configuring: false,
@@ -11,11 +33,22 @@ export const initialState = {
   error: null as string | null,
 };
 export type ProgressState = typeof initialState;
+export const selectedServerInfo = (state: ProgressState): LauncherServer | null => {
+  const listed = state.servers?.find((s) => s.id === state.selectedServer) ?? null;
+  // The manifest is authoritative: an older panel lists the main server without its release.
+  return listed && state.serverRelease
+    ? { ...listed, releaseId: state.serverRelease.releaseId }
+    : listed;
+};
 export const canLaunch = (state: ProgressState, game: string) =>
   Boolean(
     game &&
       state.connected &&
       state.readyPath === game &&
+      state.readyServer === state.selectedServer &&
+      selectedServerInfo(state)?.running !== false &&
+      state.serverRelease !== null &&
+      state.readyRelease === state.serverRelease.releaseId &&
       !state.isLoading &&
       !state.running &&
       !state.launching &&
@@ -29,16 +62,44 @@ export const progressSlice = createSlice({
     beginInstall(state, action: PayloadAction<string>) {
       state.isLoading = true;
       state.readyPath = '';
+      state.readyRelease = '';
+      state.readyServer = '';
       state.requestedPath = action.payload;
       state.error = null;
       state.currentFile = 'Проверка релиза';
     },
-    installReady(state, action: PayloadAction<string>) {
-      if (state.isLoading && state.requestedPath === action.payload) {
-        state.isLoading = false;
-        state.readyPath = action.payload;
-        state.currentFile = '';
-      }
+    installReady: {
+      reducer(
+        state,
+        action: PayloadAction<{ gamePath: string; releaseId: string; serverId: string }>,
+      ) {
+        if (state.isLoading && state.requestedPath === action.payload.gamePath) {
+          state.isLoading = false;
+          state.currentFile = '';
+          // An installation for a server the player has since switched away from is not readiness.
+          if (action.payload.serverId !== state.selectedServer) return;
+          state.readyPath = action.payload.gamePath;
+          state.readyRelease = action.payload.releaseId;
+          state.readyServer = action.payload.serverId;
+        }
+      },
+      prepare: (gamePath: string, releaseId: string, serverId = 'main') => ({
+        payload: { gamePath, releaseId, serverId },
+      }),
+    },
+    setServers(state, action: PayloadAction<LauncherServer[] | null>) {
+      state.servers = action.payload;
+    },
+    selectServer(state, action: PayloadAction<string>) {
+      if (state.selectedServer === action.payload) return;
+      state.selectedServer = action.payload;
+      state.serverRelease = null;
+      state.readyPath = '';
+      state.readyRelease = '';
+      state.readyServer = '';
+    },
+    setServerRelease(state, action: PayloadAction<ServerRelease | null>) {
+      state.serverRelease = action.payload;
     },
     updateProgress(state, action: PayloadAction<string>) {
       if (state.isLoading) state.currentFile = action.payload;
@@ -46,6 +107,8 @@ export const progressSlice = createSlice({
     setError(state, action: PayloadAction<string>) {
       state.error = action.payload;
       state.readyPath = '';
+      state.readyRelease = '';
+      state.readyServer = '';
       state.isLoading = false;
       state.launching = false;
       state.configuring = false;
@@ -57,6 +120,8 @@ export const progressSlice = createSlice({
       state.connected = action.payload;
       if (!action.payload) {
         state.readyPath = '';
+        state.readyRelease = '';
+        state.readyServer = '';
         state.isLoading = false;
         state.launching = false;
         state.configuring = false;
@@ -73,13 +138,22 @@ export const progressSlice = createSlice({
     setConfiguring(state, action: PayloadAction<boolean>) {
       state.configuring = action.payload;
     },
-    resetProgress: (state) => ({ ...initialState, connected: state.connected }),
+    resetProgress: (state) => ({
+      ...initialState,
+      connected: state.connected,
+      serverRelease: state.serverRelease,
+      servers: state.servers,
+      selectedServer: state.selectedServer,
+    }),
   },
   selectors: { progressInfoSelector: (state) => state },
 });
 export const {
   beginInstall,
   installReady,
+  setServerRelease,
+  setServers,
+  selectServer,
   updateProgress,
   setError,
   clearError,
@@ -90,3 +164,8 @@ export const {
   resetProgress,
 } = progressSlice.actions;
 export const { progressInfoSelector } = progressSlice.selectors;
+
+/** Short revision label: `localmods-1-0-12-r8` becomes `r8`. */
+export const revisionLabel = (releaseId: string) => /-(r\d+)$/.exec(releaseId)?.[1] ?? releaseId;
+export const releaseOutdated = (state: ProgressState) =>
+  state.serverRelease !== null && state.readyRelease !== state.serverRelease.releaseId;

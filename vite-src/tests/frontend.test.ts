@@ -36,7 +36,13 @@ import {
   setConfiguring,
   resetProgress,
   updateProgress,
+  setServerRelease,
+  releaseOutdated,
+  setServers,
+  selectServer,
+  selectedServerInfo,
 } from '../src/features/progress/progress.slice';
+import { chooseServer } from '../src/shared/actions/choose-server';
 import { getValheimPath } from '../src/utils/get-valheim-path';
 import { findValheimPath } from '../src/utils/find-valheim-path';
 import { store } from '../src/shared/store';
@@ -45,7 +51,33 @@ import { setOptimizationConfirmed } from '../src/features/settings/settings.slic
 import { loadArchives } from '../src/shared/actions/load-archives';
 import { launchValheim } from '../src/utils/launch-valheim';
 import { registerEvents } from '../src/events';
+const r1 = {
+  releaseId: 'r1',
+  title: 'Test',
+  gameVersion: null,
+  createdAt: null,
+  activatedAt: null,
+};
 const reduce = progressSlice.reducer;
+const testId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const servers = [
+  {
+    id: 'main',
+    kind: 'main' as const,
+    name: 'Main',
+    address: 'h:2456',
+    running: true,
+    releaseId: 'r1',
+  },
+  {
+    id: testId,
+    kind: 'test' as const,
+    name: 'Test',
+    address: 'h:2458',
+    running: true,
+    releaseId: 'r2',
+  },
+];
 beforeEach(() => {
   vi.clearAllMocks();
   native.dispatch.mockResolvedValue();
@@ -55,6 +87,9 @@ beforeEach(() => {
   native.execCommand.mockResolvedValue({ stdOut: '' });
   store.dispatch(resetProgress());
   store.dispatch(setConnected(true));
+  store.dispatch(setServers(null));
+  store.dispatch(selectServer('main'));
+  store.dispatch(setServerRelease(r1));
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -64,28 +99,29 @@ describe('launch state', () => {
     expect(canLaunch(reduce(undefined, { type: 'init' }), 'game')).toBe(false);
   });
   it('does not unlock between archive operations', () => {
-    let s = reduce(undefined, setConnected(true));
+    let s = reduce(reduce(undefined, setServerRelease(r1)), setConnected(true));
     s = reduce(s, beginInstall('game'));
     s = reduce(s, { type: 'progress/completeOperation' });
     expect(s.isLoading).toBe(true);
     expect(canLaunch(s, 'game')).toBe(false);
-    s = reduce(s, installReady('game'));
+    s = reduce(s, installReady('game', 'r1'));
     expect(canLaunch(s, 'game')).toBe(true);
   });
   it('ignores readiness for a stale path', () => {
-    const s = reduce(reduce(undefined, beginInstall('new')), installReady('old'));
+    const s = reduce(reduce(undefined, beginInstall('new')), installReady('old', 'r1'));
     expect(s.readyPath).toBe('');
     expect(s.isLoading).toBe(true);
   });
   it('clearing an error does not restore readiness', () => {
     let s = reduce(
       reduce(reduce(undefined, setConnected(true)), beginInstall('game')),
-      installReady('game'),
+      installReady('game', 'r1'),
     );
+    s = reduce(s, setServerRelease(r1));
     s = reduce(s, setError('failure'));
     s = reduce(s, clearError());
     expect(canLaunch(s, 'game')).toBe(false);
-    s = reduce(s, installReady('game'));
+    s = reduce(s, installReady('game', 'r1'));
     expect(canLaunch(s, 'game')).toBe(false);
   });
   it.each([setRunning(true), setLaunching(true), setConfiguring(true), setConnected(false)])(
@@ -93,12 +129,43 @@ describe('launch state', () => {
     (action) => {
       let s = reduce(
         reduce(reduce(undefined, setConnected(true)), beginInstall('game')),
-        installReady('game'),
+        installReady('game', 'r1'),
       );
-      s = reduce(s, action);
+      s = reduce(reduce(s, setServerRelease(r1)), action);
       expect(canLaunch(s, 'game')).toBe(false);
     },
   );
+  it('keeps readiness per server and blocks a stopped server', () => {
+    let s = reduce(reduce(undefined, setConnected(true)), setServers(servers));
+    s = reduce(s, selectServer(testId));
+    s = reduce(s, setServerRelease({ ...r1, releaseId: 'r2' }));
+    s = reduce(s, beginInstall('game'));
+    s = reduce(s, installReady('game', 'r1', 'main'));
+    expect(s.isLoading).toBe(false);
+    expect(canLaunch(s, 'game')).toBe(false);
+    s = reduce(s, beginInstall('game'));
+    s = reduce(s, installReady('game', 'r2', testId));
+    expect(canLaunch(s, 'game')).toBe(true);
+    s = reduce(s, setServers([servers[0], { ...servers[1], running: false }]));
+    expect(canLaunch(s, 'game')).toBe(false);
+    s = reduce(s, setServers([{ ...servers[1], releaseId: null }]));
+    expect(selectedServerInfo(s)?.releaseId).toBe('r2');
+    s = reduce(s, selectServer('main'));
+    expect(s.readyPath).toBe('');
+    expect(s.serverRelease).toBeNull();
+  });
+  it('blocks launch until the installed revision matches the server', () => {
+    let s = reduce(reduce(undefined, setConnected(true)), beginInstall('game'));
+    s = reduce(s, installReady('game', 'r1'));
+    expect(canLaunch(s, 'game')).toBe(false);
+    s = reduce(s, setServerRelease(r1));
+    expect(canLaunch(s, 'game')).toBe(true);
+    s = reduce(s, setServerRelease({ ...r1, releaseId: 'r2' }));
+    expect(releaseOutdated(s)).toBe(true);
+    expect(canLaunch(s, 'game')).toBe(false);
+    s = reduce(s, setServerRelease(null));
+    expect(canLaunch(s, 'game')).toBe(false);
+  });
   it('updates progress only during an installation', () => {
     expect(reduce(undefined, updateProgress('late')).currentFile).toBe('');
     expect(
@@ -172,6 +239,7 @@ describe('frontend actions and bridge events', () => {
     expect(native.setData).toHaveBeenCalled();
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LoadFiles', {
       valheimPath: 'C:/Game',
+      serverId: 'main',
     });
   });
   it('rejects invalid paths without updating storage or loading files', async () => {
@@ -210,22 +278,23 @@ describe('frontend actions and bridge events', () => {
   });
   it('launches through the extension exactly once even on double click', async () => {
     store.dispatch(beginInstall('C:/Game & mods'));
-    store.dispatch(installReady('C:/Game & mods'));
+    store.dispatch(installReady('C:/Game & mods', 'r1'));
     await Promise.all([launchValheim('C:/Game & mods'), launchValheim('C:/Game & mods')]);
     expect(native.dispatch).toHaveBeenCalledTimes(1);
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LaunchGame', {
       valheimPath: 'C:/Game & mods',
+      serverId: 'main',
     });
   });
   it('does not dispatch launch for the wrong path', async () => {
     store.dispatch(beginInstall('C:/Game'));
-    store.dispatch(installReady('C:/Game'));
+    store.dispatch(installReady('C:/Game', 'r1'));
     await launchValheim('other');
     expect(native.dispatch).not.toHaveBeenCalled();
   });
   it('shows a launch transport failure', async () => {
     store.dispatch(beginInstall('game'));
-    store.dispatch(installReady('game'));
+    store.dispatch(installReady('game', 'r1'));
     native.dispatch.mockRejectedValueOnce(new Error('offline'));
     await launchValheim('game');
     expect(store.getState().progress.launching).toBe(false);
@@ -241,7 +310,7 @@ describe('frontend actions and bridge events', () => {
     await emit('installStarted', { gamePath: 'game' });
     await emit('installProgress', { currentFile: 'plugins' });
     expect(store.getState().progress.currentFile).toBe('plugins');
-    await emit('installReady', { gamePath: 'game' });
+    await emit('installReady', { gamePath: 'game', releaseId: 'r1' });
     expect(canLaunch(store.getState().progress, 'game')).toBe(true);
     await emit('gameState', { running: true });
     expect(store.getState().progress.running).toBe(true);
@@ -261,6 +330,53 @@ describe('frontend actions and bridge events', () => {
     await native.handlers.get('extClientDisconnect')!({});
     expect(store.getState().progress.connected).toBe(false);
     store.dispatch(setOptimizationConfirmed(false));
+  });
+  it('updates once per new server revision and resumes after the game exits', async () => {
+    store.dispatch(setValheimPath.fulfilled({ path: 'C:/Game', isValid: true }, 'test', 'C:/Game'));
+    await registerEvents();
+    const emit = async (event: string, data: object = {}) =>
+      native.handlers.get('extensionToApp')!({ detail: { event, data } });
+    const loads = () =>
+      native.dispatch.mock.calls.filter((call: unknown[]) => call[1] === 'LoadFiles').length;
+    store.dispatch(beginInstall('C:/Game'));
+    store.dispatch(installReady('C:/Game', 'r1'));
+    await emit('serverRelease', { release: r1 });
+    expect(loads()).toBe(0);
+    await emit('gameState', { running: true });
+    await emit('serverRelease', { release: { ...r1, releaseId: 'r2' } });
+    expect(loads()).toBe(0);
+    expect(canLaunch(store.getState().progress, 'C:/Game')).toBe(false);
+    await emit('gameState', { running: false });
+    expect(loads()).toBe(1);
+    await emit('operationError', { error: 'network' });
+    await emit('serverRelease', { release: { ...r1, releaseId: 'r2' } });
+    expect(loads()).toBe(1);
+    await emit('serverRelease', { release: null });
+    expect(store.getState().progress.serverRelease).toBeNull();
+    store.dispatch(setValheimPath.fulfilled({ path: '', isValid: false }, 'test', ''));
+  });
+  it('switches servers, remembers the choice and installs that modpack', async () => {
+    store.dispatch(setValheimPath.fulfilled({ path: 'C:/Game', isValid: true }, 'test', 'C:/Game'));
+    store.dispatch(setServers(servers));
+    await store.dispatch(chooseServer(testId));
+    expect(native.setData).toHaveBeenCalledWith('serverId', testId);
+    expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'SelectServer', {
+      serverId: testId,
+    });
+    expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LoadFiles', {
+      valheimPath: 'C:/Game',
+      serverId: testId,
+    });
+    await registerEvents();
+    const emit = async (event: string, data: object = {}) =>
+      native.handlers.get('extensionToApp')!({ detail: { event, data } });
+    await emit('serverRelease', { serverId: 'main', release: r1 });
+    expect(store.getState().progress.serverRelease).toBeNull();
+    await emit('operationError', { error: 'stop loading' });
+    // The test server was deleted: the launcher returns to the main server.
+    await emit('serverList', { servers: [servers[0]] });
+    await vi.waitFor(() => expect(store.getState().progress.selectedServer).toBe('main'));
+    store.dispatch(setValheimPath.fulfilled({ path: '', isValid: false }, 'test', ''));
   });
   it('closes immediately when the extension is not connected', async () => {
     await registerEvents();

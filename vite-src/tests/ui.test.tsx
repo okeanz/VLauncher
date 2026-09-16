@@ -21,6 +21,7 @@ import { ValheimLaunch } from '../src/components/valheim-launch';
 import { ValheimPath } from '../src/components/valheim-path';
 import { ValheimOptimization } from '../src/components/valheim-optimization';
 import { LoadingBar } from '../src/components/loading-bar';
+import { ServerSelect } from '../src/components/server-select';
 import {
   beginInstall,
   installReady,
@@ -29,6 +30,9 @@ import {
   setRunning,
   setError,
   setConfiguring,
+  setServerRelease,
+  setServers,
+  selectServer,
 } from '../src/features/progress/progress.slice';
 import { setValheimPath } from '../src/features/settings/settings.actions';
 import { setOptimizationConfirmed } from '../src/features/settings/settings.slice';
@@ -55,6 +59,8 @@ beforeEach(() => {
       removeEventListener: vi.fn(),
     })),
   });
+  // Mantine's combobox scrolls the active option into view; jsdom has no layout.
+  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -65,6 +71,15 @@ beforeEach(() => {
   );
   store.dispatch(resetProgress());
   store.dispatch(setConnected(true));
+  store.dispatch(
+    setServerRelease({
+      releaseId: 'localmods-1-0-12-r8',
+      title: 'Starblood Ascension 0.1.0',
+      gameVersion: '1.0.12',
+      createdAt: null,
+      activatedAt: null,
+    }),
+  );
   store.dispatch(setValheimPath.fulfilled({ path: 'C:/Game', isValid: true }, 'test', 'C:/Game'));
 });
 afterEach(() => {
@@ -80,7 +95,7 @@ it('shows an unverified modpack and disables launch initially', () => {
 });
 it('enables launch only after complete installation and dispatches to the extension', async () => {
   store.dispatch(beginInstall('C:/Game'));
-  store.dispatch(installReady('C:/Game'));
+  store.dispatch(installReady('C:/Game', 'localmods-1-0-12-r8'));
   ui();
   const button = screen.getByRole('button', { name: 'Запустить Valheim' });
   expect((button as HTMLButtonElement).disabled).toBe(false);
@@ -88,6 +103,7 @@ it('enables launch only after complete installation and dispatches to the extens
   await waitFor(() =>
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LaunchGame', {
       valheimPath: 'C:/Game',
+      serverId: 'main',
     }),
   );
   expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -107,6 +123,7 @@ it('shows an error and allows retry without falsely enabling launch', async () =
   await waitFor(() =>
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LoadFiles', {
       valheimPath: 'C:/Game',
+      serverId: 'main',
     }),
   );
   expect(
@@ -143,6 +160,50 @@ it('waits for acknowledgement before showing optimization as enabled', async () 
   store.dispatch(setOptimizationConfirmed(true));
   store.dispatch(setConfiguring(false));
   await waitFor(() => expect(checkbox.checked).toBe(true));
+});
+it('offers test servers in the server menu and switches to the chosen one', async () => {
+  const test = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  store.dispatch(
+    setServers([
+      {
+        id: 'main',
+        kind: 'main',
+        name: 'Kuberheim',
+        address: null,
+        running: true,
+        releaseId: 'r8',
+      },
+      {
+        id: test,
+        kind: 'test',
+        name: 'Проверка r9',
+        address: null,
+        running: false,
+        releaseId: null,
+      },
+    ]),
+  );
+  render(
+    <Provider store={store}>
+      <MantineProvider>
+        <ServerSelect />
+        <ValheimLaunch />
+      </MantineProvider>
+    </Provider>,
+  );
+  fireEvent.click(screen.getByRole('textbox', { name: 'Сервер' }));
+  fireEvent.click(await screen.findByText('Проверка r9 · тест · остановлен · без модпака'));
+  await waitFor(() => expect(store.getState().progress.selectedServer).toBe(test));
+  await waitFor(() =>
+    expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LoadFiles', {
+      valheimPath: 'C:/Game',
+      serverId: test,
+    }),
+  );
+  store.dispatch(setError('stop'));
+  expect(await screen.findByRole('button', { name: 'Сервер остановлен' })).toBeTruthy();
+  store.dispatch(setServers(null));
+  store.dispatch(selectServer('main'));
 });
 it('shows optimization transport failures and releases controls', async () => {
   native.dispatch.mockRejectedValueOnce(new Error('disconnected'));

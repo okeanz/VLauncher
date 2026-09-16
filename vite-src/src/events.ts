@@ -8,14 +8,42 @@ import {
   setConnected,
   setRunning,
   setConfiguring,
+  setServerRelease,
+  setServers,
+  type ServerRelease,
 } from '@/features/progress/progress.slice';
+import { chooseServer } from '@/shared/actions/choose-server';
 import { setOptimizationConfirmed } from '@/features/settings/settings.slice';
 import { loadArchives } from '@/shared/actions/load-archives';
 let closing = false;
 let closeTimeout: ReturnType<typeof setTimeout> | undefined;
 let helloTimer: ReturnType<typeof setInterval> | undefined;
+/** Last server/revision installed automatically; a failed attempt is retried only by the player. */
+let autoUpdatedRelease = '';
+function syncRelease(release: ServerRelease | null) {
+  store.dispatch(setServerRelease(release));
+  const { progress, settings } = store.getState();
+  const key = release && `${progress.selectedServer}/${release.releaseId}`;
+  if (
+    !release ||
+    !settings.valheimPathValid ||
+    (progress.readyServer === progress.selectedServer &&
+      progress.readyRelease === release.releaseId) ||
+    autoUpdatedRelease === key ||
+    !progress.connected ||
+    progress.isLoading ||
+    progress.running ||
+    progress.launching ||
+    progress.configuring
+  )
+    return;
+  // Busy states are skipped without remembering the revision, so the next poll retries.
+  autoUpdatedRelease = key!;
+  void store.dispatch(loadArchives(settings.valheimPath));
+}
 export const registerEvents = async () => {
   closing = false;
+  autoUpdatedRelease = '';
   await events.on('windowClose', async () => {
     if (closing) return;
     closing = true;
@@ -41,6 +69,11 @@ export const registerEvents = async () => {
         if (helloTimer) clearInterval(helloTimer);
         const wasConnected = store.getState().progress.connected;
         store.dispatch(setConnected(true));
+        void extensions
+          .dispatch('fileLoader', 'SelectServer', {
+            serverId: store.getState().progress.selectedServer,
+          })
+          .catch(() => {});
         const s = store.getState().settings;
         if (!wasConnected && s.valheimPathValid) void store.dispatch(loadArchives(s.valheimPath));
         break;
@@ -49,8 +82,20 @@ export const registerEvents = async () => {
         store.dispatch(beginInstall(data.gamePath));
         break;
       case 'installReady':
-        store.dispatch(installReady(data.gamePath));
+        store.dispatch(installReady(data.gamePath, data.releaseId, data.serverId ?? 'main'));
         break;
+      case 'serverRelease':
+        if ((data.serverId ?? 'main') === store.getState().progress.selectedServer)
+          syncRelease(data.release ?? null);
+        break;
+      case 'serverList': {
+        store.dispatch(setServers(data.servers ?? null));
+        const { selectedServer } = store.getState().progress;
+        // A deleted test server falls back to the main one.
+        if (data.servers && !data.servers.some((s: { id: string }) => s.id === selectedServer))
+          void store.dispatch(chooseServer('main'));
+        break;
+      }
       case 'installProgress':
         store.dispatch(updateProgress(data.currentFile));
         break;
@@ -59,6 +104,7 @@ export const registerEvents = async () => {
         break;
       case 'gameState':
         store.dispatch(setRunning(data.running));
+        if (!data.running) syncRelease(store.getState().progress.serverRelease);
         break;
       case 'optimizationReady':
         if (data.gamePath === store.getState().settings.valheimPath)

@@ -3,10 +3,14 @@ import { extensions } from '@neutralinojs/lib';
 import { beginInstall, setError, type ProgressState } from '@/features/progress/progress.slice';
 export const loadArchives = createAsyncThunk(
   'app/loadArchives',
-  async (valheimPath: string, { dispatch }) => {
+  async (valheimPath: string, { dispatch, getState }) => {
     dispatch(beginInstall(valheimPath));
     try {
-      await extensions.dispatch('fileLoader', 'LoadFiles', { valheimPath });
+      const { progress } = getState() as { progress: ProgressState };
+      await extensions.dispatch('fileLoader', 'LoadFiles', {
+        valheimPath,
+        serverId: progress.selectedServer,
+      });
     } catch {
       dispatch(setError('Не удалось связаться с установщиком'));
     }

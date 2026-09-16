@@ -9,6 +9,10 @@ import {
   extractSafe,
   commitInstall,
   installRelease,
+  fetchManifest,
+  fetchServers,
+  validateServers,
+  releaseInfo,
   recover,
   exists,
   hashFile,
@@ -305,7 +309,8 @@ describe('downloads and cache', () => {
     const r = release();
     const request = vi.fn(r.request);
     expect(
-      await installRelease(game, 'https://mods.example', cache, signal(), undefined, request),
+      (await installRelease(game, 'https://mods.example', cache, signal(), undefined, request))
+        .releaseId,
     ).toBe('r1');
     expect(request).toHaveBeenCalledTimes(5);
     expect(await fs.readFile(path.join(game, 'BepInEx/plugins/mod.dll'), 'utf8')).toBe('mod-r1');
@@ -313,6 +318,106 @@ describe('downloads and cache', () => {
     request.mockClear();
     await installRelease(game, 'https://mods.example', cache, signal(), undefined, request);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+  it('reads the server list and falls back to the main server on older panels', async () => {
+    const list = {
+      schemaVersion: 1,
+      servers: [
+        {
+          id: 'main',
+          name: 'Main',
+          address: '10.0.0.5:2456',
+          running: true,
+          releaseId: 'r1',
+          manifest: 'files/launcher-manifest.json',
+        },
+        {
+          id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          kind: 'test',
+          name: 'Test',
+          address: 'bad address',
+          running: false,
+          releaseId: null,
+          manifest: 'files/servers/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/launcher-manifest.json',
+        },
+      ],
+    };
+    const servers = await fetchServers('https://mods.example', signal(), (async () =>
+      Response.json(list)) as typeof fetch);
+    expect(servers.map((s) => [s.id, s.kind, s.address, s.running, s.releaseId])).toEqual([
+      ['main', 'main', '10.0.0.5:2456', true, 'r1'],
+      ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'test', null, false, null],
+    ]);
+    const old = await fetchServers(
+      'https://mods.example',
+      signal(),
+      (async () => new Response(null, { status: 404 })) as typeof fetch,
+    );
+    expect(old.map((s) => s.id)).toEqual(['main']);
+    for (const broken of [
+      { ...list, schemaVersion: 2 },
+      { schemaVersion: 1, servers: [list.servers[1]] },
+      {
+        schemaVersion: 1,
+        servers: [list.servers[0], { ...list.servers[1], manifest: 'https://evil.example/m.json' }],
+      },
+      {
+        schemaVersion: 1,
+        servers: [
+          list.servers[0],
+          { ...list.servers[1], id: '../x', manifest: 'files/servers/../x/launcher-manifest.json' },
+        ],
+      },
+    ])
+      expect(() => validateServers(broken)).toThrow();
+  });
+  it('installs the modpack of a test server from its own manifest', async () => {
+    const r = release();
+    const request = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith(
+        '/files/servers/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/launcher-manifest.json',
+      )
+        ? r.request('https://mods.example/files/launcher-manifest.json')
+        : String(url).endsWith('launcher-manifest.json')
+          ? new Response(null, { status: 500 })
+          : r.request(url),
+    );
+    const installed = await installRelease(
+      game,
+      'https://mods.example',
+      cache,
+      signal(),
+      undefined,
+      request as typeof fetch,
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    );
+    expect(installed.releaseId).toBe('r1');
+    await expect(
+      fetchManifest('https://mods.example', signal(), request as typeof fetch, '../main'),
+    ).rejects.toThrow();
+  });
+  it('reads the published revision without installing', async () => {
+    const r = release();
+    const request = vi.fn(async (url: string | URL | Request) => {
+      const response = await r.request(url);
+      if (!String(url).endsWith('launcher-manifest.json')) return response;
+      return Response.json({
+        ...(await response.json()),
+        title: 'Starblood r8',
+        activatedAt: '2026-09-16T10:00:00.000Z',
+        createdAt: { injected: true },
+      });
+    });
+    const m = await fetchManifest('https://mods.example', signal(), request as typeof fetch);
+    expect(releaseInfo(m)).toEqual({
+      releaseId: 'r1',
+      title: 'Starblood r8',
+      gameVersion: null,
+      createdAt: null,
+      activatedAt: '2026-09-16T10:00:00.000Z',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(await exists(path.join(game, '.vlauncher'))).toBe(false);
   });
   it('redownloads a corrupt cached archive', async () => {
     const r = release();

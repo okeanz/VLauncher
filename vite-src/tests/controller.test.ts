@@ -1,10 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Controller } from '../extension/src/controller';
+const release = (releaseId: string) => ({
+  releaseId,
+  title: null,
+  gameVersion: null,
+  createdAt: null,
+  activatedAt: null,
+});
 function fixture() {
   const deps = {
-    install: vi.fn(async (_game: string, _signal: AbortSignal) => {}),
+    install: vi.fn(async (_game: string, _server: string, _signal: AbortSignal) => release('r1')),
+    currentRelease: vi.fn(async (_server: string) => release('r1')),
     running: vi.fn(async () => false),
-    launch: vi.fn(async (_game: string) => {}),
+    launch: vi.fn(async (_game: string, _server: string) => {}),
     notify: vi.fn(),
   };
   return { deps, controller: new Controller(deps) };
@@ -23,7 +31,65 @@ describe('operation controller', () => {
     expect(deps.launch).not.toHaveBeenCalled();
     await controller.update('one');
     await controller.launch('one');
-    expect(deps.launch).toHaveBeenCalledWith('one');
+    expect(deps.launch).toHaveBeenCalledWith('one', 'main');
+  });
+  it('refuses to launch a revision the server has replaced', async () => {
+    const { deps, controller } = fixture();
+    await controller.update('game');
+    expect(deps.notify).toHaveBeenCalledWith('installReady', {
+      gamePath: 'game',
+      releaseId: 'r1',
+      serverId: 'main',
+    });
+    deps.currentRelease.mockResolvedValue(release('r2'));
+    await controller.launch('game');
+    expect(deps.launch).not.toHaveBeenCalled();
+    expect(deps.notify).toHaveBeenCalledWith('serverRelease', {
+      serverId: 'main',
+      release: release('r2'),
+    });
+    deps.install.mockResolvedValue(release('r2'));
+    await controller.launch('game');
+    expect(deps.launch).not.toHaveBeenCalled();
+    await controller.update('game');
+    await controller.launch('game');
+    expect(deps.launch).toHaveBeenCalledWith('game', 'main');
+  });
+  it('launches only for the server whose modpack was installed', async () => {
+    const test = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const { deps, controller } = fixture();
+    await controller.update('game', test);
+    expect(deps.install).toHaveBeenCalledWith('game', test, expect.any(AbortSignal));
+    await controller.launch('game', 'main');
+    expect(deps.launch).not.toHaveBeenCalled();
+    await controller.update('game', test);
+    await controller.launch('game', test);
+    expect(deps.currentRelease).toHaveBeenCalledWith(test);
+    expect(deps.launch).toHaveBeenCalledWith('game', test);
+  });
+  it('fails closed when the server revision cannot be read at launch', async () => {
+    const { deps, controller } = fixture();
+    await controller.update('game');
+    deps.currentRelease.mockRejectedValue(new Error('offline'));
+    await controller.launch('game');
+    expect(deps.launch).not.toHaveBeenCalled();
+    expect(deps.notify).toHaveBeenCalledWith('operationError', {
+      error: 'Не удалось проверить ревизию модпака на сервере',
+    });
+  });
+  it('reports the published revision or its absence', async () => {
+    const { deps, controller } = fixture();
+    await controller.checkRelease();
+    expect(deps.notify).toHaveBeenLastCalledWith('serverRelease', {
+      serverId: 'main',
+      release: release('r1'),
+    });
+    deps.currentRelease.mockRejectedValue(new Error('offline'));
+    await controller.checkRelease();
+    expect(deps.notify).toHaveBeenLastCalledWith('serverRelease', {
+      serverId: 'main',
+      release: null,
+    });
   });
   it('invalidates readiness when updating fails', async () => {
     const { deps, controller } = fixture();
@@ -58,8 +124,8 @@ describe('operation controller', () => {
     let finish!: () => void;
     deps.install.mockImplementationOnce(
       () =>
-        new Promise<void>((r) => {
-          finish = r;
+        new Promise((r) => {
+          finish = () => r(release('r1'));
         }),
     );
     const pending = controller.update('game');
@@ -76,8 +142,8 @@ describe('operation controller', () => {
     const { deps, controller } = fixture();
     let rollback!: () => void;
     deps.install.mockImplementationOnce(
-      (_game, signal) =>
-        new Promise<void>((_resolve, reject) => {
+      (_game, _server, signal) =>
+        new Promise((_resolve, reject) => {
           signal.addEventListener('abort', () => {
             rollback = () => reject(new Error('cancelled'));
           });

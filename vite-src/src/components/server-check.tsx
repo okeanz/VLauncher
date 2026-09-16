@@ -1,5 +1,6 @@
 import { Card, Group, Indicator, Text } from '@mantine/core';
 import { useFileServerCheck } from '@/hooks/use-file-server-check';
+import { ServerSelect } from '@/components/server-select';
 
 export const ServerCheck = () => {
   const status = useFileServerCheck();
@@ -13,6 +14,7 @@ export const ServerCheck = () => {
           </Text>
         </Indicator>
       </Card>
+      <ServerSelect />
     </Group>
   );
 };

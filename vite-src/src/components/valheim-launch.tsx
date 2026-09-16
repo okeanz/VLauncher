@@ -5,7 +5,12 @@ import {
   valheimPathSelector,
   valheimPathValidSelector,
 } from '@/features/settings/settings.slice.ts';
-import { progressInfoSelector, canLaunch } from '@/features/progress/progress.slice';
+import {
+  progressInfoSelector,
+  canLaunch,
+  releaseOutdated,
+  selectedServerInfo,
+} from '@/features/progress/progress.slice';
 import { launchValheim } from '@/utils/launch-valheim.ts';
 
 export const ValheimLaunch = () => {
@@ -28,7 +33,15 @@ export const ValheimLaunch = () => {
         ? 'Игра запущена'
         : progressInfo.isLoading
           ? 'Установка модпака...'
-          : 'Запустить Valheim'}
+          : selectedServerInfo(progressInfo)?.running === false
+            ? 'Сервер остановлен'
+            : selectedServerInfo(progressInfo)?.releaseId === null
+              ? 'На сервере нет модпака'
+              : !progressInfo.serverRelease
+                ? 'Нет связи с сервером модпака'
+                : progressInfo.readyPath && releaseOutdated(progressInfo)
+                  ? 'Сначала обновите модпак'
+                  : 'Запустить Valheim'}
     </Button>
   );
 };
