@@ -165,7 +165,13 @@ export const {
 } = progressSlice.actions;
 export const { progressInfoSelector } = progressSlice.selectors;
 
-/** Short revision label: `localmods-1-0-12-r8` becomes `r8`. */
-export const revisionLabel = (releaseId: string) => /-(r\d+)$/.exec(releaseId)?.[1] ?? releaseId;
+/**
+ * Short revision label that keeps the modpack line: `localmods-1-0-12-r8` becomes `localmods r8`.
+ * Revision numbers are counted per line, so `r8` alone can mean two different modpacks.
+ */
+export const revisionLabel = (releaseId: string) => {
+  const m = /^(.+?)-\d+(?:-\d+)*-(r\d+)$/.exec(releaseId);
+  return m ? `${m[1]} ${m[2]}` : releaseId;
+};
 export const releaseOutdated = (state: ProgressState) =>
   state.serverRelease !== null && state.readyRelease !== state.serverRelease.releaseId;

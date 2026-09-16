@@ -38,6 +38,7 @@ import {
   updateProgress,
   setServerRelease,
   releaseOutdated,
+  revisionLabel,
   setServers,
   selectServer,
   selectedServerInfo,
@@ -165,6 +166,13 @@ describe('launch state', () => {
     expect(canLaunch(s, 'game')).toBe(false);
     s = reduce(s, setServerRelease(null));
     expect(canLaunch(s, 'game')).toBe(false);
+  });
+  it('labels revisions with their modpack line, since numbers are counted per line', () => {
+    expect(revisionLabel('localmods-1-0-12-r25')).toBe('localmods r25');
+    expect(revisionLabel('modpack-1-0-12-r25')).toBe('modpack r25');
+    expect(revisionLabel('localmods-1-0-12-r25')).not.toBe(revisionLabel('modpack-1-0-12-r25'));
+    expect(revisionLabel('r1')).toBe('r1');
+    expect(revisionLabel('development')).toBe('development');
   });
   it('updates progress only during an installation', () => {
     expect(reduce(undefined, updateProgress('late')).currentFile).toBe('');

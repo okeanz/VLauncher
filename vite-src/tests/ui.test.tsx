@@ -192,6 +192,7 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
     </Provider>,
   );
   fireEvent.click(screen.getByRole('textbox', { name: 'Сервер' }));
+  expect(await screen.findByText('Kuberheim · localmods r8')).toBeTruthy();
   fireEvent.click(await screen.findByText('Проверка r9 · тест · остановлен · без модпака'));
   await waitFor(() => expect(store.getState().progress.selectedServer).toBe(test));
   await waitFor(() =>

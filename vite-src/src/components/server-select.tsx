@@ -1,14 +1,14 @@
 import { Card, Group, Select, Text } from '@mantine/core';
 import { useAppDispatch, useAppSelector } from '@/shared/store/types';
 import { chooseServer } from '@/shared/actions/choose-server';
-import type { LauncherServer } from '@/features/progress/progress.slice';
+import { revisionLabel, type LauncherServer } from '@/features/progress/progress.slice';
 
 const label = (s: LauncherServer) =>
   [
     s.name,
     s.kind === 'test' ? 'тест' : null,
     s.running === false ? 'остановлен' : null,
-    s.releaseId === null ? 'без модпака' : null,
+    s.releaseId === null ? 'без модпака' : revisionLabel(s.releaseId),
   ]
     .filter(Boolean)
     .join(' · ');
