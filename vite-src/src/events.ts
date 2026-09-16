@@ -15,13 +15,18 @@ let closing = false;
 let closeTimeout: ReturnType<typeof setTimeout> | undefined;
 let helloTimer: ReturnType<typeof setInterval> | undefined;
 export const registerEvents = async () => {
+  closing = false;
   await events.on('windowClose', async () => {
     if (closing) return;
     closing = true;
     if (helloTimer) clearInterval(helloTimer);
+    if (!store.getState().progress.connected) {
+      await app.killProcess();
+      return;
+    }
     closeTimeout = setTimeout(() => {
       void app.killProcess();
-    }, 15000);
+    }, 5000);
     try {
       await extensions.dispatch('fileLoader', 'terminate');
     } catch {

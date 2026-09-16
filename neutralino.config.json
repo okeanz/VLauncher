@@ -19,6 +19,7 @@
     "storage.getData",
     "storage.setData",
     "extensions.dispatch",
+    "extensions.getStats",
     "events.*"
   ],
   "singlePageServe": true,

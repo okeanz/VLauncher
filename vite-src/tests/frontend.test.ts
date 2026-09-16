@@ -262,9 +262,18 @@ describe('frontend actions and bridge events', () => {
     expect(store.getState().progress.connected).toBe(false);
     store.dispatch(setOptimizationConfirmed(false));
   });
+  it('closes immediately when the extension is not connected', async () => {
+    await registerEvents();
+    store.dispatch(setConnected(false));
+    await native.handlers.get('windowClose')!({});
+    expect(native.dispatch).not.toHaveBeenCalledWith('fileLoader', 'terminate');
+    expect(native.killProcess).toHaveBeenCalledTimes(1);
+    store.dispatch(setConnected(true));
+  });
   it('waits for extension shutdown acknowledgement before closing the native app', async () => {
     vi.useFakeTimers();
     await registerEvents();
+    store.dispatch(setConnected(true));
     await native.handlers.get('windowClose')!({});
     expect(native.killProcess).not.toHaveBeenCalled();
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'terminate');

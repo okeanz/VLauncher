@@ -26,7 +26,7 @@ export function safeRelative(name: string): string {
         p === '.' ||
         p === '..' ||
         /[<>:"|?*]/.test(p) ||
-        [...p].some(character => character.charCodeAt(0) < 32) ||
+        [...p].some((character) => character.charCodeAt(0) < 32) ||
         /[ .]$/.test(p) ||
         reserved.test(p),
     )
@@ -100,7 +100,9 @@ async function replaceFile(source: string, target: string) {
   try {
     await fs.copyFile(source, temp);
     await fs.rename(temp, target);
-  } finally { await fs.rm(temp, { force: true }); }
+  } finally {
+    await fs.rm(temp, { force: true });
+  }
 }
 export async function extractSafe(archive: string, dest: string, signal?: AbortSignal) {
   const zip = new AdmZip(archive);
@@ -286,6 +288,15 @@ export async function commitInstall(
   }
   await recover(game);
 }
+
+/** HTTP is tolerated only for loopback and RFC 1918 private IPv4 addresses (home LAN). */
+export function isTrustedHttpHost(hostname: string): boolean {
+  if (['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return true;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 export async function installRelease(
   game: string,
   base: string,
@@ -296,12 +307,14 @@ export async function installRelease(
 ) {
   const baseUrl = new URL(base.endsWith('/') ? base : base + '/');
   if (
-    baseUrl.protocol !== 'https:' &&
     !(
-      baseUrl.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(baseUrl.hostname)
+      baseUrl.protocol === 'https:' ||
+      (baseUrl.protocol === 'http:' && isTrustedHttpHost(baseUrl.hostname))
     )
   )
-    throw new Error('File server requires HTTPS (HTTP is allowed only on localhost)');
+    throw new Error(
+      'File server requires HTTPS (HTTP is allowed only on localhost or private LAN addresses)',
+    );
   async function get(url: string) {
     signal.throwIfAborted();
     const response = await request(url, {

@@ -153,7 +153,13 @@ describe('manifest trust boundary', () => {
   });
 });
 describe('transactional installation', () => {
-  it('replaces a managed hard link without changing its external target',async()=>{const external=await put(dir,'personal-loader.dll','external');await fs.link(external,path.join(game,'winhttp.dll'));await commitInstall(game,stage,'r1');expect(await fs.readFile(external,'utf8')).toBe('external');expect(await fs.readFile(path.join(game,'winhttp.dll'),'utf8')).toBe('new-loader');});
+  it('replaces a managed hard link without changing its external target', async () => {
+    const external = await put(dir, 'personal-loader.dll', 'external');
+    await fs.link(external, path.join(game, 'winhttp.dll'));
+    await commitInstall(game, stage, 'r1');
+    expect(await fs.readFile(external, 'utf8')).toBe('external');
+    expect(await fs.readFile(path.join(game, 'winhttp.dll'), 'utf8')).toBe('new-loader');
+  });
   it('does not duplicate backups or rewrite unchanged files on every startup', async () => {
     await commitInstall(game, stage, 'r1');
     const state = path.join(game, '.vlauncher');
@@ -357,6 +363,13 @@ describe('downloads and cache', () => {
       installRelease(game, 'http://mods.example', cache, signal(), undefined, request),
     ).rejects.toThrow('HTTPS');
     expect(request).not.toHaveBeenCalled();
+  });
+  it('allows plain HTTP for private LAN addresses', async () => {
+    const request = vi.fn(async () => new Response(null, { status: 404 }));
+    await expect(
+      installRelease(game, 'http://192.168.50.181:3000', cache, signal(), undefined, request),
+    ).rejects.toThrow('404');
+    expect(request).toHaveBeenCalled();
   });
   it('cancels before starting network requests', async () => {
     const request = vi.fn();
