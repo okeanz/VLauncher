@@ -1,14 +1,18 @@
+# Lefthook and the JS tooling live in vite-src, not in the repository root.
+lefthook: node vite-src/node_modules/lefthook/bin/index.js
+
 pre-commit:
   commands:
     format:
+      root: vite-src/
       glob: "*.{js,jsx,ts,tsx,json,css,md}"
-      run: yarn prettier --write {staged_files}
+      run: npx prettier --write {staged_files}
       stage_fixed: true
     lint:
+      root: vite-src/
       glob: "*.{js,jsx,ts,tsx}"
-      run: yarn eslint --fix {staged_files}
-      stage_fixed: true
+      run: npm run lint
     typecheck:
+      root: vite-src/
       glob: "*.{ts,tsx}"
-      run: yarn tsc --noEmit
-      stage_fixed: true
+      run: npm run typecheck
