@@ -89,6 +89,7 @@ export function validateServers(value: unknown): LauncherServer[] {
   return servers;
 }
 const roots = new Set(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']);
+const mirroredRoots = ['BepInEx/plugins', 'BepInEx/patchers'];
 const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 export function safeRelative(name: string): string {
   const normalized = name.replace(/\\/g, '/');
@@ -314,7 +315,17 @@ export async function commitInstall(
   const files = await listFiles(stage);
   if (!files.some((f) => f.startsWith('BepInEx/core/')) || !files.includes('winhttp.dll'))
     throw new Error('Incomplete Windows BepInEx package');
-  const touched = [...new Set([...previous.files, ...files])];
+  // Plugins and patchers mirror the release: a mod the server does not run makes Jotunn refuse
+  // the connection. Configs outside the release stay, they hold the player's local settings.
+  const releaseNames = new Set(files.map((f) => f.toLowerCase()));
+  const unmanaged: string[] = [];
+  for (const root of mirroredRoots) {
+    await assertNoLinks(game, root);
+    if (await exists(path.join(game, root)))
+      for (const name of await listFiles(path.join(game, root), root))
+        if (!releaseNames.has(name.toLowerCase())) unmanaged.push(name);
+  }
+  const touched = [...new Set([...previous.files, ...files, ...unmanaged])];
   const entries: Journal['entries'] = [];
   for (const name of touched) {
     managedName(name);
@@ -370,6 +381,16 @@ export async function commitInstall(
     throw e;
   }
   await recover(game);
+  for (const root of mirroredRoots)
+    if (await exists(path.join(game, root))) await removeEmptyDirectories(path.join(game, root));
+}
+async function removeEmptyDirectories(dir: string) {
+  for (const e of await fs.readdir(dir, { withFileTypes: true }))
+    if (e.isDirectory()) {
+      const child = path.join(dir, e.name);
+      await removeEmptyDirectories(child);
+      if (!(await fs.readdir(child)).length) await fs.rmdir(child);
+    }
 }
 
 /** HTTP is tolerated only for loopback and RFC 1918 private IPv4 addresses (home LAN). */
