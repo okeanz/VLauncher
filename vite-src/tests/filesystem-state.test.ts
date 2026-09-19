@@ -91,6 +91,26 @@ describe('boot configuration', () => {
     expect(await fs.readFile(file, 'utf8')).toContain('external=1');
     expect(await fs.readFile(file + '.vlauncher-backup', 'utf8')).toBe('original');
   });
+  it('adopts a file replaced by a game update and drops the stale backup', async () => {
+    const updated = 'gfx-enable-gfx-jobs=1\nbuild-guid=new\n';
+    const file = await put(dir, 'valheim_Data/boot.config', 'build-guid=old\n');
+    await setOptimization(dir, true);
+    await fs.writeFile(file, updated);
+    expect(await getOptimization(dir)).toBe(false);
+    await setOptimization(dir, true);
+    expect(await getOptimization(dir)).toBe(true);
+    expect(await fs.readFile(file + '.vlauncher-backup', 'utf8')).toBe(updated);
+    await setOptimization(dir, false);
+    expect(await fs.readFile(file, 'utf8')).toBe(updated);
+  });
+  it('drops a stale backup when disabling after a game update', async () => {
+    const file = await put(dir, 'valheim_Data/boot.config', 'build-guid=old\n');
+    await setOptimization(dir, true);
+    await fs.writeFile(file, 'build-guid=new\n');
+    await setOptimization(dir, false);
+    expect(await fs.readFile(file, 'utf8')).toBe('build-guid=new\n');
+    expect(await exists(file + '.vlauncher-backup')).toBe(false);
+  });
   it('reports missing files instead of pretending success', async () => {
     await expect(setOptimization(dir, true)).rejects.toThrow();
   });

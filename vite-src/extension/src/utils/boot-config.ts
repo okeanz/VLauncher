@@ -10,7 +10,10 @@ const settings = [
 export async function getOptimization(game: string): Promise<boolean> {
   const file = path.join(game, 'valheim_Data', 'boot.config');
   if (!(await exists(file)) || !(await exists(file + '.vlauncher-backup'))) return false;
-  const lines = (await fs.readFile(file, 'utf8')).split(/\r?\n/).map((line) => line.trim());
+  return hasSettings(await fs.readFile(file, 'utf8'));
+}
+function hasSettings(content: string) {
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
   return settings.every((setting) => lines.includes(setting));
 }
 export async function setOptimization(game: string, enabled: boolean) {
@@ -23,6 +26,10 @@ export async function setOptimization(game: string, enabled: boolean) {
       throw new Error('Ссылки в Boot.config не поддерживаются');
   }
   const content = await fs.readFile(file, 'utf8');
+  // Steam rewrites boot.config on every game update. When our settings are gone,
+  // the file is a fresh original and the old backup no longer describes it.
+  if (!hasSettings(content) && (await exists(backup)))
+    await fs.unlink(backup);
   const apply = (original: string) => {
     const keys = new Set(settings.map((line) => line.split('=')[0]));
     const newline = original.includes('\r\n') ? '\r\n' : '\n';
