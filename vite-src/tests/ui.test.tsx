@@ -8,10 +8,11 @@ const native = vi.hoisted(() => ({
   dialog: vi.fn(async () => ''),
   getStats: vi.fn(async () => ({ isFile: true })),
   setData: vi.fn(async () => {}),
+  execCommand: vi.fn(),
 }));
 vi.mock('@neutralinojs/lib', () => ({
   extensions: { dispatch: native.dispatch },
-  os: { showFolderDialog: native.dialog },
+  os: { showFolderDialog: native.dialog, execCommand: native.execCommand },
   filesystem: { getStats: native.getStats },
   storage: { setData: native.setData },
   debug: { log: vi.fn() },
@@ -51,6 +52,7 @@ function ui() {
 beforeEach(() => {
   vi.clearAllMocks();
   native.dispatch.mockResolvedValue();
+  native.execCommand.mockRejectedValue(new Error('not checked in this test'));
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn(() => ({
@@ -107,6 +109,33 @@ it('enables launch only after complete installation and dispatches to the extens
     }),
   );
   expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+it('offers to start Steam instead of launching a game that would hang without it', async () => {
+  let signedIn = false;
+  native.execCommand.mockImplementation(async (command: string) => {
+    if (command.includes('ActiveUser'))
+      return { stdOut: `    ActiveUser    REG_DWORD    ${signedIn ? '0x1' : '0x0'}` };
+    if (command.includes('SteamExe'))
+      return { stdOut: '    SteamExe    REG_SZ    c:/steam/steam.exe' };
+    if (command.startsWith('tasklist')) return { stdOut: 'steam.exe' };
+    signedIn = true;
+    return { stdOut: '' };
+  });
+  store.dispatch(beginInstall('C:/Game'));
+  store.dispatch(installReady('C:/Game', 'localmods-1-0-12-r8'));
+  ui();
+  fireEvent.click(screen.getByRole('button', { name: 'Запустить Valheim' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Запустить Steam' }));
+  expect(native.dispatch).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(native.execCommand).toHaveBeenCalledWith('"c:\\steam\\steam.exe"', { background: true }),
+  );
+  await waitFor(() =>
+    expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'LaunchGame', {
+      valheimPath: 'C:/Game',
+      serverId: 'main',
+    }),
+  );
 });
 it('disables folder selection, optimization and retry while updating', () => {
   store.dispatch(beginInstall('C:/Game'));
