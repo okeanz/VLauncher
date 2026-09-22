@@ -50,6 +50,8 @@ set VLAUNCHER_TEST_PACKAGED=
 | `config.zip` | Конфиги без внешнего каталога `config/` | `BepInEx/config/` |
 | `plugins.zip` | Моды без внешнего каталога `plugins/` | `BepInEx/plugins/` |
 
+Лаунчер зеркалит `BepInEx/plugins` и `BepInEx/patchers`: файлы, которых нет в релизе, удаляются. Внутри `BepInEx/config` так же зеркалятся только папки серверных модов: `wackysDatabase`, `EpicLoot`, `ValheimEnchantmentSystem`, `_RelicHeimFiles`, `TherzieTranslations`. Кладите в `config.zip` полные наборы их файлов: чужой yml в этих папках будет удалён. Кэш `wackysDatabase/Cache` удаляется при смене `releaseId`. Одиночные cfg в корне `BepInEx/config` и папки других модов лаунчер не трогает: там остаются локальные настройки игрока.
+
 Для базового ZIP допускаются только перечисленные корневые пути. Linux-скрипты, `valheim.exe`, метаданные Thunderstore и прочие файлы в корне в клиентскую сборку не включайте. Пустые `patchers/config/plugins` допустимы в виде корректного пустого ZIP.
 
 Из корня проекта выполните:

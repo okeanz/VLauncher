@@ -90,6 +90,22 @@ export function validateServers(value: unknown): LauncherServer[] {
 }
 const roots = new Set(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']);
 const mirroredRoots = ['BepInEx/plugins', 'BepInEx/patchers'];
+// Config directories owned by the release. The mods behind them read every yml in their directory
+// (WackysDatabase, EpicLoot, ValheimEnchantmentSystem) or ship data the modpack tunes as a whole
+// (_RelicHeimFiles, TherzieTranslations), so a file left over from another build or dropped in by
+// hand changes the server's balance. Single cfg files in BepInEx/config and the directories of
+// other mods are not touched: they hold the player's local settings and client-side mod configs.
+const mirroredConfigDirectories = [
+  'BepInEx/config/wackysDatabase',
+  'BepInEx/config/EpicLoot',
+  'BepInEx/config/ValheimEnchantmentSystem',
+  'BepInEx/config/_RelicHeimFiles',
+  'BepInEx/config/TherzieTranslations',
+];
+// WackysDatabase rebuilds this cache on every game start, and the launcher installs on every
+// start too, so mirroring it unconditionally would delete and back it up each time. It is dropped
+// only when the release changes: a cache built from the previous release breaks the new one.
+const releaseBoundCaches = ['BepInEx/config/wackysDatabase/Cache'];
 const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 export function safeRelative(name: string): string {
   const normalized = name.replace(/\\/g, '/');
@@ -316,14 +332,18 @@ export async function commitInstall(
   if (!files.some((f) => f.startsWith('BepInEx/core/')) || !files.includes('winhttp.dll'))
     throw new Error('Incomplete Windows BepInEx package');
   // Plugins and patchers mirror the release: a mod the server does not run makes Jotunn refuse
-  // the connection. Configs outside the release stay, they hold the player's local settings.
+  // the connection. So do the config directories of server-side mods, while configs elsewhere
+  // stay, they hold the player's local settings.
   const releaseNames = new Set(files.map((f) => f.toLowerCase()));
+  const keptCaches = previous.releaseId === releaseId ? releaseBoundCaches : [];
+  const isKeptCache = (name: string) =>
+    keptCaches.some((cache) => name.toLowerCase().startsWith(cache.toLowerCase() + '/'));
   const unmanaged: string[] = [];
-  for (const root of mirroredRoots) {
+  for (const root of [...mirroredRoots, ...mirroredConfigDirectories]) {
     await assertNoLinks(game, root);
     if (await exists(path.join(game, root)))
       for (const name of await listFiles(path.join(game, root), root))
-        if (!releaseNames.has(name.toLowerCase())) unmanaged.push(name);
+        if (!releaseNames.has(name.toLowerCase()) && !isKeptCache(name)) unmanaged.push(name);
   }
   const touched = [...new Set([...previous.files, ...files, ...unmanaged])];
   const entries: Journal['entries'] = [];
@@ -383,6 +403,13 @@ export async function commitInstall(
   await recover(game);
   for (const root of mirroredRoots)
     if (await exists(path.join(game, root))) await removeEmptyDirectories(path.join(game, root));
+  // The mods recreate their config directories, so an emptied one goes away entirely.
+  for (const root of mirroredConfigDirectories) {
+    const target = path.join(game, root);
+    if (!(await exists(target))) continue;
+    await removeEmptyDirectories(target);
+    if (!(await fs.readdir(target)).length) await fs.rmdir(target);
+  }
 }
 async function removeEmptyDirectories(dir: string) {
   for (const e of await fs.readdir(dir, { withFileTypes: true }))

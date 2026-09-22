@@ -213,6 +213,80 @@ describe('transactional installation', () => {
     expect(await exists(path.join(game, 'BepInEx/plugins/personal.dll'))).toBe(false);
     expect(await exists(path.join(game, 'BepInEx/config/obsolete.cfg'))).toBe(true);
   });
+  it('mirrors the config directories of server-side mods, keeps the rest of config', async () => {
+    await put(stage, 'BepInEx/config/wackysDatabase/Items/sword.yml', 'release');
+    await put(stage, 'BepInEx/config/EpicLoot/loottables.json', 'release');
+    await put(stage, 'BepInEx/config/mod.cfg', 'release');
+    await put(game, 'BepInEx/config/wackysDatabase/Items/sword.yml', 'other build');
+    await put(game, 'BepInEx/config/wackysDatabase/Items/foreign.yml', 'hand-made');
+    await put(game, 'BepInEx/config/wackysDatabase/Cache/items.cache', 'stale');
+    await put(game, 'BepInEx/config/EpicLoot/extra/loot.json', 'hand-made');
+    await put(game, 'BepInEx/config/TherzieTranslations/en.json', 'other build');
+    await put(game, 'BepInEx/config/mod.cfg', 'local settings');
+    await put(game, 'BepInEx/config/my-client-mod.cfg', 'local settings');
+    await put(game, 'BepInEx/config/ClientMod/keys.yml', 'local settings');
+    await commitInstall(game, stage, 'r1');
+    const config = path.join(game, 'BepInEx/config');
+    expect(await fs.readFile(path.join(config, 'wackysDatabase/Items/sword.yml'), 'utf8')).toBe(
+      'release',
+    );
+    expect(await exists(path.join(config, 'wackysDatabase/Items/foreign.yml'))).toBe(false);
+    expect(await exists(path.join(config, 'wackysDatabase/Cache'))).toBe(false);
+    expect(await exists(path.join(config, 'EpicLoot/extra'))).toBe(false);
+    expect(await exists(path.join(config, 'TherzieTranslations'))).toBe(false);
+    expect(await fs.readFile(path.join(config, 'mod.cfg'), 'utf8')).toBe('release');
+    expect(await fs.readFile(path.join(config, 'my-client-mod.cfg'), 'utf8')).toBe(
+      'local settings',
+    );
+    expect(await fs.readFile(path.join(config, 'ClientMod/keys.yml'), 'utf8')).toBe(
+      'local settings',
+    );
+    const state = path.join(game, '.vlauncher');
+    const backup = (await fs.readdir(state)).find((n) => n.startsWith('backup-'))!;
+    for (const name of [
+      'wackysDatabase/Items/foreign.yml',
+      'wackysDatabase/Cache/items.cache',
+      'EpicLoot/extra/loot.json',
+    ])
+      expect(await exists(path.join(state, backup, 'BepInEx/config', name))).toBe(true);
+  });
+  it('drops the WackysDatabase cache only when the release changes', async () => {
+    await put(stage, 'BepInEx/config/wackysDatabase/Items/sword.yml', 'release');
+    await commitInstall(game, stage, 'r1');
+    const cache = path.join(game, 'BepInEx/config/wackysDatabase/Cache/items.cache');
+    await put(game, 'BepInEx/config/wackysDatabase/Cache/items.cache', 'built by the mod');
+    await commitInstall(game, stage, 'r1');
+    expect(await fs.readFile(cache, 'utf8')).toBe('built by the mod');
+    await put(game, 'BepInEx/config/wackysDatabase/Items/foreign.yml', 'hand-made');
+    await commitInstall(game, stage, 'r1');
+    expect(await exists(path.join(game, 'BepInEx/config/wackysDatabase/Items/foreign.yml'))).toBe(
+      false,
+    );
+    expect(await fs.readFile(cache, 'utf8')).toBe('built by the mod');
+    await commitInstall(game, stage, 'r2');
+    expect(await exists(path.dirname(cache))).toBe(false);
+    expect(await exists(path.join(game, 'BepInEx/config/wackysDatabase/Items/sword.yml'))).toBe(
+      true,
+    );
+  });
+  it('restores files removed from a mirrored config directory when the install fails', async () => {
+    await commitInstall(game, stage, 'r1');
+    await put(game, 'BepInEx/config/wackysDatabase/Items/a.yml', 'hand-made a');
+    await put(game, 'BepInEx/config/wackysDatabase/Items/b.yml', 'hand-made b');
+    let removed = 0;
+    await expect(
+      commitInstall(game, stage, 'r2', undefined, (name) => {
+        if (name.startsWith('BepInEx/config/wackysDatabase/') && ++removed === 2)
+          throw new Error('disk failure');
+      }),
+    ).rejects.toThrow('disk failure');
+    const items = path.join(game, 'BepInEx/config/wackysDatabase/Items');
+    expect(await fs.readFile(path.join(items, 'a.yml'), 'utf8')).toBe('hand-made a');
+    expect(await fs.readFile(path.join(items, 'b.yml'), 'utf8')).toBe('hand-made b');
+    expect(await exists(path.join(game, '.vlauncher/journal.json'))).toBe(false);
+    await commitInstall(game, stage, 'r2');
+    expect(await exists(path.join(game, 'BepInEx/config/wackysDatabase'))).toBe(false);
+  });
   it('cleans a hand-installed plugin even when the release did not change', async () => {
     await commitInstall(game, stage, 'r1');
     await put(game, 'BepInEx/plugins/personal.dll', 'personal');
