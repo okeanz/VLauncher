@@ -507,8 +507,33 @@ export async function installRelease(
     signal.throwIfAborted();
     progress('Установка проверенных файлов');
     await commitInstall(game, stage, manifest.releaseId, signal);
+    await pruneCache(
+      cache,
+      server,
+      manifest.archives.map((a) => a.sha256),
+    );
     return releaseInfo(manifest);
   } finally {
     await fs.rm(work, { recursive: true, force: true });
   }
+}
+/**
+ * Keeps only the archives of the last release installed from each server, so switching
+ * between main and test servers stays offline while old revisions stop piling up.
+ */
+export async function pruneCache(cache: string, server: string, keep: string[]) {
+  const indexPath = path.join(cache, 'index.json');
+  let index: Record<string, string[]> = {};
+  try {
+    const parsed = JSON.parse(await fs.readFile(indexPath, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) index = parsed;
+  } catch {
+    // Missing or damaged index: rebuild it from this install.
+  }
+  index[server] = keep;
+  await fs.writeFile(indexPath, JSON.stringify(index));
+  const kept = new Set(Object.values(index).flatMap((v) => (Array.isArray(v) ? v : [])));
+  for (const name of await fs.readdir(cache))
+    if (name.endsWith('.zip') && !kept.has(name.slice(0, -4)))
+      await fs.rm(path.join(cache, name), { force: true }).catch(() => {});
 }

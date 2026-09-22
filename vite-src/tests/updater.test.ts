@@ -192,7 +192,10 @@ describe('transactional installation', () => {
     const backup = (await fs.readdir(state)).find((n) => n.startsWith('backup-'))!;
     expect(await fs.readFile(path.join(state, backup, 'winhttp.dll'), 'utf8')).toBe('old-loader');
     expect(
-      await fs.readFile(path.join(state, backup, 'BepInEx/plugins/Backpacks/Backpacks.dll'), 'utf8'),
+      await fs.readFile(
+        path.join(state, backup, 'BepInEx/plugins/Backpacks/Backpacks.dll'),
+        'utf8',
+      ),
     ).toBe('personal');
     expect(
       JSON.parse(await fs.readFile(path.join(state, 'installed.json'), 'utf8')).releaseId,
@@ -331,10 +334,33 @@ describe('downloads and cache', () => {
     ).toBe('r1');
     expect(request).toHaveBeenCalledTimes(5);
     expect(await fs.readFile(path.join(game, 'BepInEx/plugins/mod.dll'), 'utf8')).toBe('mod-r1');
-    expect(await fs.readdir(cache)).toHaveLength(4);
+    const zips = async () => (await fs.readdir(cache)).filter((n) => n.endsWith('.zip'));
+    expect(await zips()).toHaveLength(4);
     request.mockClear();
     await installRelease(game, 'https://mods.example', cache, signal(), undefined, request);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+  it('drops archives of older releases but keeps the last one of each server', async () => {
+    const zips = async () => (await fs.readdir(cache)).filter((n) => n.endsWith('.zip')).sort();
+    const base = 'https://mods.example';
+    const r1 = release('r1');
+    await installRelease(game, base, cache, signal(), undefined, r1.request, 'main');
+    const test = release('t1');
+    await installRelease(
+      game,
+      base,
+      cache,
+      signal(),
+      undefined,
+      test.request,
+      '0123abcd-0000-4000-8000-00000000cafe',
+    );
+    const r2 = release('r2');
+    await installRelease(game, base, cache, signal(), undefined, r2.request, 'main');
+    const expected = [...r2.manifest.archives, ...test.manifest.archives]
+      .map((a) => a.sha256 + '.zip')
+      .sort();
+    expect(await zips()).toEqual([...new Set(expected)].sort());
   });
   it('reads the server list and falls back to the main server on older panels', async () => {
     const list = {
