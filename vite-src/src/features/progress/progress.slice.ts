@@ -6,13 +6,26 @@ export type ServerRelease = {
   createdAt: string | null;
   activatedAt: string | null;
 };
+export type ServerState = 'ready' | 'starting' | 'preparing' | 'stopped' | 'failed' | 'unavailable';
 export type LauncherServer = {
   id: string;
   kind: 'main' | 'test';
   name: string;
   address: string | null;
   running: boolean | null;
+  /** Missing or null from a panel that predates readiness reporting: running decides then. */
+  state?: ServerState | null;
   releaseId: string | null;
+};
+/** The game on the server accepts players; an unlisted server is not held back. */
+export const serverReady = (s: LauncherServer | null) =>
+  s === null || (s.state ? s.state === 'ready' : s.running !== false);
+/** Short status for the server menu and the launch button; empty when the server is ready. */
+export const serverStatusLabel = (s: LauncherServer): string => {
+  if (s.state === 'starting' || s.state === 'preparing') return 'запускается';
+  if (s.state === 'failed' || s.state === 'unavailable') return 'не отвечает';
+  if (s.state === 'stopped' || (!s.state && s.running === false)) return 'остановлен';
+  return '';
 };
 export const initialState = {
   isLoading: false,
@@ -46,7 +59,7 @@ export const canLaunch = (state: ProgressState, game: string) =>
       state.connected &&
       state.readyPath === game &&
       state.readyServer === state.selectedServer &&
-      selectedServerInfo(state)?.running !== false &&
+      serverReady(selectedServerInfo(state)) &&
       state.serverRelease !== null &&
       state.readyRelease === state.serverRelease.releaseId &&
       !state.isLoading &&

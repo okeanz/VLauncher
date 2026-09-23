@@ -220,6 +220,7 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
       </MantineProvider>
     </Provider>,
   );
+  expect(screen.getByLabelText('Сервер готов')).toBeTruthy();
   fireEvent.click(screen.getByRole('textbox', { name: 'Сервер' }));
   expect(await screen.findByText('Kuberheim · localmods r8')).toBeTruthy();
   fireEvent.click(await screen.findByText('Проверка r9 · тест · остановлен · без модпака'));
@@ -232,6 +233,22 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
   );
   store.dispatch(setError('stop'));
   expect(await screen.findByRole('button', { name: 'Сервер остановлен' })).toBeTruthy();
+  expect(screen.getByLabelText('Сервер остановлен')).toBeTruthy();
+  store.dispatch(
+    setServers([
+      {
+        id: test,
+        kind: 'test',
+        name: 'Проверка r9',
+        address: null,
+        running: true,
+        state: 'starting',
+        releaseId: 'r9',
+      },
+    ]),
+  );
+  expect(await screen.findByRole('button', { name: 'Сервер запускается…' })).toBeTruthy();
+  expect(screen.getByLabelText('Сервер запускается')).toBeTruthy();
   store.dispatch(setServers(null));
   store.dispatch(selectServer('main'));
 });

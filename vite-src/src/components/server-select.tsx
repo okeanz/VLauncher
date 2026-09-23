@@ -1,17 +1,34 @@
-import { Card, Group, Select, Text } from '@mantine/core';
+import { Card, Group, Indicator, Select, Text } from '@mantine/core';
 import { useAppDispatch, useAppSelector } from '@/shared/store/types';
 import { chooseServer } from '@/shared/actions/choose-server';
-import { revisionLabel, type LauncherServer } from '@/features/progress/progress.slice';
+import {
+  revisionLabel,
+  selectedServerInfo,
+  serverStatusLabel,
+  type LauncherServer,
+} from '@/features/progress/progress.slice';
 
 const label = (s: LauncherServer) =>
   [
     s.name,
     s.kind === 'test' ? 'тест' : null,
-    s.running === false ? 'остановлен' : null,
+    serverStatusLabel(s) || null,
     s.releaseId === null ? 'без модпака' : revisionLabel(s.releaseId),
   ]
     .filter(Boolean)
     .join(' · ');
+
+/** Dot next to the server menu: green when the game accepts players, yellow while it loads, red when it is down. */
+const indicator = (s: LauncherServer | null) => {
+  if (!s) return { color: 'gray', processing: false, title: 'Состояние сервера неизвестно' };
+  const status = serverStatusLabel(s);
+  if (!status) return { color: 'green', processing: false, title: 'Сервер готов' };
+  return {
+    color: status === 'запускается' ? 'yellow' : 'red',
+    processing: status === 'запускается',
+    title: `Сервер ${status}`,
+  };
+};
 
 export const ServerSelect = () => {
   const dispatch = useAppDispatch();
@@ -32,12 +49,21 @@ export const ServerSelect = () => {
         },
         ...servers.map((s) => ({ value: s.id, label: label(s) })),
       ];
+  const dot = indicator(selectedServerInfo(p));
   return (
-    <Card padding="xs" style={{ paddingLeft: '16px' }}>
+    <Card padding="xs" style={{ paddingLeft: '20px' }}>
       <Group gap="xs" wrap="nowrap">
-        <Text size="xs" style={{ whiteSpace: 'nowrap' }}>
-          Сервер:
-        </Text>
+        <Indicator
+          color={dot.color}
+          position="middle-start"
+          processing={dot.processing}
+          title={dot.title}
+          aria-label={dot.title}
+        >
+          <Text size="xs" style={{ whiteSpace: 'nowrap', paddingLeft: '15px' }}>
+            Сервер:
+          </Text>
+        </Indicator>
         <Select
           aria-label="Сервер"
           size="xs"

@@ -11,6 +11,7 @@ import {
   canLaunch,
   releaseOutdated,
   selectedServerInfo,
+  serverStatusLabel,
 } from '@/features/progress/progress.slice';
 import { launchValheim } from '@/utils/launch-valheim.ts';
 import { isSteamReady, startSteam, waitForSteam } from '@/utils/steam-status.ts';
@@ -41,6 +42,8 @@ export const ValheimLaunch = () => {
   };
 
   const isDisabled = !valheimPathValid || !canLaunch(progressInfo, valheimPath);
+  const server = selectedServerInfo(progressInfo);
+  const serverStatus = server ? serverStatusLabel(server) : '';
 
   return (
     <>
@@ -54,15 +57,17 @@ export const ValheimLaunch = () => {
           ? 'Игра запущена'
           : progressInfo.isLoading
             ? 'Установка модпака...'
-            : selectedServerInfo(progressInfo)?.running === false
-              ? 'Сервер остановлен'
-              : selectedServerInfo(progressInfo)?.releaseId === null
-                ? 'На сервере нет модпака'
-                : !progressInfo.serverRelease
-                  ? 'Нет связи с сервером модпака'
-                  : progressInfo.readyPath && releaseOutdated(progressInfo)
-                    ? 'Сначала обновите модпак'
-                    : 'Запустить Valheim'}
+            : serverStatus === 'запускается'
+              ? 'Сервер запускается…'
+              : serverStatus
+                ? `Сервер ${serverStatus}`
+                : server?.releaseId === null
+                  ? 'На сервере нет модпака'
+                  : !progressInfo.serverRelease
+                    ? 'Нет связи с сервером модпака'
+                    : progressInfo.readyPath && releaseOutdated(progressInfo)
+                      ? 'Сначала обновите модпак'
+                      : 'Запустить Valheim'}
       </Button>
       <Modal
         opened={steamPrompt !== 'closed'}

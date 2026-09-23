@@ -149,6 +149,11 @@ describe('launch state', () => {
     expect(canLaunch(s, 'game')).toBe(true);
     s = reduce(s, setServers([servers[0], { ...servers[1], running: false }]));
     expect(canLaunch(s, 'game')).toBe(false);
+    // The container is up but the game is still loading: the panel says so, running alone no longer decides.
+    s = reduce(s, setServers([servers[0], { ...servers[1], running: true, state: 'starting' }]));
+    expect(canLaunch(s, 'game')).toBe(false);
+    s = reduce(s, setServers([servers[0], { ...servers[1], running: true, state: 'ready' }]));
+    expect(canLaunch(s, 'game')).toBe(true);
     s = reduce(s, setServers([{ ...servers[1], releaseId: null }]));
     expect(selectedServerInfo(s)?.releaseId).toBe('r2');
     s = reduce(s, selectServer('main'));

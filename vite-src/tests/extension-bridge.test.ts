@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageEvent } from 'ws';
 import { EventEmitter } from 'node:events';
+type MockServer = {
+  id: string;
+  kind: string;
+  name: string;
+  address: string | null;
+  running: boolean;
+  state?: string | null;
+  releaseId: string;
+};
 const mocks = vi.hoisted(() => ({
   install: vi.fn(async () => ({
     releaseId: 'r1',
@@ -16,22 +25,26 @@ const mocks = vi.hoisted(() => ({
   shutdown: vi.fn(async () => {}),
   spawn: vi.fn(),
   execFile: vi.fn(),
-  servers: vi.fn(async () => [
-    {
-      id: 'main',
-      kind: 'main',
-      name: 'Main',
-      address: null as string | null,
-      running: true,
-      releaseId: 'r1',
-    },
-  ]),
+  servers: vi.fn(
+    async (): Promise<MockServer[]> => [
+      {
+        id: 'main',
+        kind: 'main',
+        name: 'Main',
+        address: null as string | null,
+        running: true,
+        releaseId: 'r1',
+      },
+    ],
+  ),
 }));
 vi.mock('../extension/src/updater', () => ({
   installRelease: mocks.install,
   fetchManifest: mocks.install,
   fetchServers: mocks.servers,
   releaseInfo: (m: unknown) => m,
+  serverReady: (s: { running: boolean | null; state?: string | null }) =>
+    s.state ? s.state === 'ready' : s.running !== false,
   validServerId: (id: unknown) =>
     typeof id === 'string' && /^(main|[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(id),
 }));
@@ -144,6 +157,57 @@ describe('extension commands', () => {
     );
     await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
     expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
+  });
+  it('holds the launch while the game on the server is still loading', async () => {
+    const { send } = await fixture();
+    const main = {
+      id: 'main',
+      kind: 'main',
+      name: 'Main',
+      address: '192.168.50.181:2456',
+      running: true,
+      state: 'starting',
+      releaseId: 'r1',
+    };
+    mocks.servers.mockResolvedValue([main]);
+    await send('LoadFiles', { valheimPath: 'C:/Game' });
+    await send('LaunchGame', { valheimPath: 'C:/Game' });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith('operationError', {
+      error: 'Сервер «Main» ещё запускается, подождите',
+    });
+    mocks.servers.mockResolvedValue([{ ...main, state: 'failed' }]);
+    await send('LoadFiles', { valheimPath: 'C:/Game' });
+    await send('LaunchGame', { valheimPath: 'C:/Game' });
+    expect(mocks.notify).toHaveBeenLastCalledWith('operationError', {
+      error: 'Сервер «Main» не отвечает',
+    });
+  });
+  it('polls a starting server faster until it is ready', async () => {
+    vi.useFakeTimers();
+    try {
+      const { send, startingPollInterval } = await fixture();
+      const main = {
+        id: 'main',
+        kind: 'main',
+        name: 'Main',
+        address: null,
+        running: true,
+        state: 'starting',
+        releaseId: 'r1',
+      };
+      mocks.servers.mockResolvedValue([main]);
+      await send('Hello');
+      await vi.advanceTimersByTimeAsync(0);
+      const before = mocks.servers.mock.calls.length;
+      mocks.servers.mockResolvedValue([{ ...main, state: 'ready' }]);
+      await vi.advanceTimersByTimeAsync(startingPollInterval);
+      expect(mocks.servers.mock.calls.length).toBe(before + 1);
+      await vi.advanceTimersByTimeAsync(startingPollInterval);
+      expect(mocks.servers.mock.calls.length).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('does not write into a folder without valheim.exe', async () => {
     const { send } = await fixture();

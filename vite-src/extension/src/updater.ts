@@ -30,6 +30,16 @@ export const releaseInfo = (m: Manifest): ReleaseInfo => ({
   createdAt: m.createdAt ?? null,
   activatedAt: m.activatedAt ?? null,
 });
+/** What the panel observed: ready means the game accepts players, starting means the container is up but the game is still loading. */
+export type ServerState = 'ready' | 'starting' | 'preparing' | 'stopped' | 'failed' | 'unavailable';
+const serverStates = new Set<ServerState>([
+  'ready',
+  'starting',
+  'preparing',
+  'stopped',
+  'failed',
+  'unavailable',
+]);
 export type LauncherServer = {
   id: string;
   kind: 'main' | 'test';
@@ -37,9 +47,14 @@ export type LauncherServer = {
   /** host:port for Valheim's +connect; null when the server does not publish one. */
   address: string | null;
   running: boolean | null;
+  /** null when the panel predates readiness reporting; running is the fallback then. */
+  state?: ServerState | null;
   releaseId: string | null;
   manifest: string;
 };
+/** A join only makes sense once the game listens; an older panel without state is trusted on running alone. */
+export const serverReady = (s: { running: boolean | null; state?: ServerState | null }) =>
+  s.state ? s.state === 'ready' : s.running !== false;
 const serverId = /^(main|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/;
 export const validServerId = (id: unknown): id is string =>
   typeof id === 'string' && serverId.test(id);
@@ -53,6 +68,7 @@ export const fallbackServers: LauncherServer[] = [
     name: 'Основной сервер',
     address: null,
     running: null,
+    state: null,
     releaseId: null,
     manifest: manifestPathOf('main'),
   },
@@ -78,6 +94,7 @@ export function validateServers(value: unknown): LauncherServer[] {
       name: optionalText(s.name, 64) || (s.id === 'main' ? 'Основной сервер' : 'Тестовый сервер'),
       address,
       running: typeof s.running === 'boolean' ? s.running : null,
+      state: serverStates.has(s.state as ServerState) ? (s.state as ServerState) : null,
       releaseId:
         typeof s.releaseId === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(s.releaseId)
           ? s.releaseId
