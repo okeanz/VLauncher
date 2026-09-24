@@ -20,7 +20,9 @@
     "storage.setData",
     "extensions.dispatch",
     "extensions.getStats",
-    "events.*"
+    "events.*",
+    "window.move",
+    "window.minimize"
   ],
   "singlePageServe": true,
   "enableExtensions": true,
@@ -41,6 +43,7 @@
       "minWidth": 800,
       "exitProcessOnClose": false,
       "resizable": false,
+      "borderless": true,
       "icon": "/vite-src/public/icon.png",
       "enableInspector": false
     }

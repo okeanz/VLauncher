@@ -1,60 +1,45 @@
-import { Button, Card, Grid, Input, Text } from '@mantine/core';
-import { useSelector } from 'react-redux';
-import {
-  valheimPathSelector,
-  valheimPathValidSelector,
-} from '@/features/settings/settings.slice.ts';
-import { os } from '@neutralinojs/lib';
-import { setValheimPath } from '@/features/settings/settings.actions.ts';
-import { useAppDispatch } from '@/shared/store/types.ts';
+import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
+import { useAppSelector } from '@/shared/store/types';
+import { useChooseFolder } from '@/hooks/use-choose-folder';
 
 export const ValheimPath = () => {
-  const dispatch = useAppDispatch();
-
-  const busy = useSelector(
-    (s: import('@/shared/store').RootState) =>
-      s.settings.selecting ||
-      s.progress.isLoading ||
-      s.progress.running ||
-      s.progress.launching ||
-      s.progress.configuring,
-  );
-  const valheimPath = useSelector(valheimPathSelector);
-  const valheimPathValid = useSelector(valheimPathValidSelector);
-
-  const showDialog = async () => {
-    const result = await os.showFolderDialog('Выберите папку', {
-      defaultPath: valheimPath ?? 'C:/',
-    });
-    if (result) dispatch(setValheimPath(result));
-  };
-
+  const { valheimPath, valheimPathValid } = useAppSelector((s) => s.settings);
+  const chooseFolder = useChooseFolder();
   return (
-    <Card>
-      <Text size="sm" mb="xs">
+    <div className="ns-field">
+      <div className="ns-label">папка valheim</div>
+      <div className="ns-field-row">
+        <div className="ns-input">
+          {valheimPath && valheimPathValid ? (
+            <IconCheck size={14} stroke={2} color="var(--ns-ok)" style={{ flexShrink: 0 }} />
+          ) : (
+            <IconAlertTriangle
+              size={14}
+              stroke={2}
+              color="var(--ns-warn)"
+              style={{ flexShrink: 0 }}
+            />
+          )}
+          <span title={valheimPath}>
+            {valheimPath || 'C:/Program Files (x86)/Steam/steamapps/common/Valheim'}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="ns-button"
+          disabled={chooseFolder.busy}
+          onClick={chooseFolder.open}
+        >
+          Обзор
+        </button>
+      </div>
+      <div className={valheimPath && !valheimPathValid ? 'ns-hint ns-tone-warn' : 'ns-hint'}>
         {valheimPath && valheimPathValid
-          ? '✅  Обнаружен путь до установленной копии Valheim:'
-          : 'Нажмите "Обзор" и выберите путь до папки с установленным Valheim'}
-      </Text>
-      {valheimPath && !valheimPathValid && (
-        <Text size="xs" mb="xs" c="orange">
-          ❌ По указанному пути не найден valheim.exe
-        </Text>
-      )}
-      <Grid grow>
-        <Grid.Col span={10}>
-          <Input
-            placeholder="C:/Program Files (x86)/Steam/steamapps/common/Valheim"
-            value={valheimPath}
-            readOnly={true}
-          />
-        </Grid.Col>
-        <Grid.Col span={2}>
-          <Button disabled={busy} fullWidth={true} onClick={showDialog}>
-            Обзор
-          </Button>
-        </Grid.Col>
-      </Grid>
-    </Card>
+          ? 'Найдена установленная копия Valheim'
+          : valheimPath
+            ? 'По указанному пути не найден valheim.exe'
+            : 'Нажмите «Обзор» и выберите папку с установленным Valheim'}
+      </div>
+    </div>
   );
 };

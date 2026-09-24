@@ -1,4 +1,4 @@
-import { Card, Group, Indicator, Select, Text } from '@mantine/core';
+import { Select } from '@mantine/core';
 import { useAppDispatch, useAppSelector } from '@/shared/store/types';
 import { chooseServer } from '@/shared/actions/choose-server';
 import {
@@ -20,16 +20,17 @@ const label = (s: LauncherServer) =>
 
 /** Dot next to the server menu: green when the game accepts players, yellow while it loads, red when it is down. */
 const indicator = (s: LauncherServer | null) => {
-  if (!s) return { color: 'gray', processing: false, title: 'Состояние сервера неизвестно' };
+  if (!s) return { color: 'var(--ns-muted)', pulse: false, title: 'Состояние сервера неизвестно' };
   const status = serverStatusLabel(s);
-  if (!status) return { color: 'green', processing: false, title: 'Сервер готов' };
+  if (!status) return { color: 'var(--ns-ok)', pulse: false, title: 'Сервер готов' };
   return {
-    color: status === 'запускается' ? 'yellow' : 'red',
-    processing: status === 'запускается',
+    color: status === 'запускается' ? 'var(--ns-warn)' : 'var(--ns-bad)',
+    pulse: status === 'запускается',
     title: `Сервер ${status}`,
   };
 };
 
+/** Admin-only server menu in the title bar (see `serverPicker`). */
 export const ServerSelect = () => {
   const dispatch = useAppDispatch();
   const p = useAppSelector((state) => state.progress);
@@ -51,32 +52,27 @@ export const ServerSelect = () => {
       ];
   const dot = indicator(selectedServerInfo(p));
   return (
-    <Card padding="xs" style={{ paddingLeft: '20px' }}>
-      <Group gap="xs" wrap="nowrap">
-        <Indicator
-          color={dot.color}
-          position="middle-start"
-          processing={dot.processing}
-          title={dot.title}
-          aria-label={dot.title}
-        >
-          <Text size="xs" style={{ whiteSpace: 'nowrap', paddingLeft: '15px' }}>
-            Сервер:
-          </Text>
-        </Indicator>
-        <Select
-          aria-label="Сервер"
-          size="xs"
-          w={280}
-          data={data}
-          value={p.selectedServer}
-          allowDeselect={false}
-          disabled={busy || servers.length < 2}
-          onChange={(value) => {
-            if (value) void dispatch(chooseServer(value));
-          }}
-        />
-      </Group>
-    </Card>
+    <div className="ns-dev">
+      <span className="ns-dev-tag">DEV</span>
+      <span
+        className={dot.pulse ? 'ns-dot ns-dot--pulse' : 'ns-dot'}
+        style={{ color: dot.color }}
+        title={dot.title}
+        aria-label={dot.title}
+        role="img"
+      />
+      <Select
+        aria-label="Сервер"
+        size="xs"
+        w={230}
+        data={data}
+        value={p.selectedServer}
+        allowDeselect={false}
+        disabled={busy || servers.length < 2}
+        onChange={(value) => {
+          if (value) void dispatch(chooseServer(value));
+        }}
+      />
+    </div>
   );
 };

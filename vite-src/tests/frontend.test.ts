@@ -185,6 +185,17 @@ describe('launch state', () => {
       reduce(reduce(undefined, beginInstall('game')), updateProgress('downloading')).currentFile,
     ).toBe('downloading');
   });
+  it('keeps the last known install percent and clamps it to 0–100', () => {
+    let s = reduce(undefined, beginInstall('game'));
+    expect(s.percent).toBeNull();
+    s = reduce(s, updateProgress('Скачивание plugins', 42.7));
+    expect(s.percent).toBe(42);
+    s = reduce(s, updateProgress('Распаковка plugins'));
+    expect(s.percent).toBe(42);
+    expect(reduce(s, updateProgress('x', 180)).percent).toBe(100);
+    expect(reduce(s, updateProgress('x', 'bad')).percent).toBe(42);
+    expect(reduce(s, installReady('game', 'r1')).percent).toBeNull();
+  });
 });
 describe('discovery', () => {
   it('continues to the second Steam library when the first has no game', async () => {
@@ -323,6 +334,8 @@ describe('frontend actions and bridge events', () => {
     await emit('installStarted', { gamePath: 'game' });
     await emit('installProgress', { currentFile: 'plugins' });
     expect(store.getState().progress.currentFile).toBe('plugins');
+    await emit('installProgress', { currentFile: 'plugins', percent: 57 });
+    expect(store.getState().progress.percent).toBe(57);
     await emit('installReady', { gamePath: 'game', releaseId: 'r1' });
     expect(canLaunch(store.getState().progress, 'game')).toBe(true);
     await emit('gameState', { running: true });

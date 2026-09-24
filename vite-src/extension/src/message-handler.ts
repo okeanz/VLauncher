@@ -82,7 +82,7 @@ export const controller = new Controller({
       apiBase(),
       path.join(dataDirectory, 'cache'),
       signal,
-      (currentFile) => sendProgressEvent('installProgress', { currentFile }),
+      (currentFile, percent) => sendProgressEvent('installProgress', { currentFile, percent }),
       fetch,
       server,
     );

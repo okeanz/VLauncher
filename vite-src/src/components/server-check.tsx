@@ -1,20 +1,15 @@
-import { Card, Group, Indicator, Text } from '@mantine/core';
 import { useFileServerCheck } from '@/hooks/use-file-server-check';
-import { ServerSelect } from '@/components/server-select';
 
+/** File server reachability, shown in the title bar. */
 export const ServerCheck = () => {
   const status = useFileServerCheck();
-
   return (
-    <Group>
-      <Card padding="xs" style={{ paddingLeft: '20px' }}>
-        <Indicator color={status.color} position="middle-start" processing={status.isReady}>
-          <Text size="xs" style={{ paddingLeft: '15px' }}>
-            Файл-сервер: {status.name}
-          </Text>
-        </Indicator>
-      </Card>
-      <ServerSelect />
-    </Group>
+    <div className="ns-status">
+      <span
+        className="ns-dot"
+        style={{ color: status.isReady ? 'var(--ns-ok)' : 'var(--ns-bad)' }}
+      />
+      <span>Файл-сервер {status.name.toLowerCase()}</span>
+    </div>
   );
 };

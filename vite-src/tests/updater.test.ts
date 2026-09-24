@@ -414,6 +414,35 @@ describe('downloads and cache', () => {
     await installRelease(game, 'https://mods.example', cache, signal(), undefined, request);
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it('reports a rising install percent that ends at 100', async () => {
+    const r = release();
+    const seen: [string, number][] = [];
+    await installRelease(
+      game,
+      'https://mods.example',
+      cache,
+      signal(),
+      (text, percent) => seen.push([text, percent]),
+      r.request,
+    );
+    const percents = seen.map(([, p]) => p);
+    expect(percents[0]).toBe(0);
+    expect(percents.at(-1)).toBe(100);
+    expect(percents.every((p, i) => i === 0 || p >= percents[i - 1])).toBe(true);
+    expect(seen.some(([text]) => text === 'Скачивание plugins')).toBe(true);
+    // A second install from the cache still runs from 0 to 100 without downloads.
+    seen.length = 0;
+    await installRelease(
+      game,
+      'https://mods.example',
+      cache,
+      signal(),
+      (text, percent) => seen.push([text, percent]),
+      r.request,
+    );
+    expect(seen.at(-1)?.[1]).toBe(100);
+    expect(seen.some(([text]) => text.startsWith('Скачивание'))).toBe(false);
+  });
   it('drops archives of older releases but keeps the last one of each server', async () => {
     const zips = async () => (await fs.readdir(cache)).filter((n) => n.endsWith('.zip')).sort();
     const base = 'https://mods.example';

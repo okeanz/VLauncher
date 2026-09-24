@@ -43,6 +43,8 @@ export const initialState = {
   launching: false,
   connected: false,
   currentFile: '',
+  /** Install progress 0–100 from the installer; null while unknown (older installer). */
+  percent: null as number | null,
   error: null as string | null,
 };
 export type ProgressState = typeof initialState;
@@ -80,6 +82,7 @@ export const progressSlice = createSlice({
       state.requestedPath = action.payload;
       state.error = null;
       state.currentFile = 'Проверка релиза';
+      state.percent = null;
     },
     installReady: {
       reducer(
@@ -89,6 +92,7 @@ export const progressSlice = createSlice({
         if (state.isLoading && state.requestedPath === action.payload.gamePath) {
           state.isLoading = false;
           state.currentFile = '';
+          state.percent = null;
           // An installation for a server the player has since switched away from is not readiness.
           if (action.payload.serverId !== state.selectedServer) return;
           state.readyPath = action.payload.gamePath;
@@ -114,8 +118,21 @@ export const progressSlice = createSlice({
     setServerRelease(state, action: PayloadAction<ServerRelease | null>) {
       state.serverRelease = action.payload;
     },
-    updateProgress(state, action: PayloadAction<string>) {
-      if (state.isLoading) state.currentFile = action.payload;
+    updateProgress: {
+      reducer(state, action: PayloadAction<{ currentFile: string; percent: number | null }>) {
+        if (!state.isLoading) return;
+        state.currentFile = action.payload.currentFile;
+        if (action.payload.percent !== null) state.percent = action.payload.percent;
+      },
+      prepare: (currentFile: string, percent: unknown = null) => ({
+        payload: {
+          currentFile,
+          percent:
+            typeof percent === 'number' && Number.isFinite(percent)
+              ? Math.max(0, Math.min(100, Math.floor(percent)))
+              : null,
+        },
+      }),
     },
     setError(state, action: PayloadAction<string>) {
       state.error = action.payload;
@@ -123,6 +140,7 @@ export const progressSlice = createSlice({
       state.readyRelease = '';
       state.readyServer = '';
       state.isLoading = false;
+      state.percent = null;
       state.launching = false;
       state.configuring = false;
     },

@@ -1,0 +1,128 @@
+{
+  "files": [
+    {
+      "file": "app-icon-128.png",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 37266
+    },
+    {
+      "file": "app-icon-16.png",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 1010
+    },
+    {
+      "file": "app-icon-256.png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 134457
+    },
+    {
+      "file": "app-icon-32.png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 3204
+    },
+    {
+      "file": "app-icon-44.png",
+      "width": 44,
+      "height": 44,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 5601
+    },
+    {
+      "file": "app-icon-48.png",
+      "width": 48,
+      "height": 48,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 6552
+    },
+    {
+      "file": "app-icon-64.png",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 10734
+    },
+    {
+      "file": "app-icon.png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 2066003
+    },
+    {
+      "file": "axe-glyph.png",
+      "width": 144,
+      "height": 144,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 1637
+    },
+    {
+      "file": "dock-texture.webp",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "opaque": true,
+      "bytes": 225902
+    },
+    {
+      "file": "drakkar-hero.png",
+      "width": 660,
+      "height": 272,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 208353
+    },
+    {
+      "file": "drakkar-progress.png",
+      "width": 144,
+      "height": 60,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 10838
+    },
+    {
+      "file": "hero-night.webp",
+      "width": 1600,
+      "height": 800,
+      "alpha": false,
+      "opaque": true,
+      "bytes": 941644
+    },
+    {
+      "file": "play-metal.webp",
+      "width": 620,
+      "height": 192,
+      "alpha": false,
+      "opaque": true,
+      "bytes": 118920
+    },
+    {
+      "file": "starblood-star.png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "opaque": false,
+      "bytes": 10522
+    }
+  ],
+  "heroLeftHalfContrast": {
+    "minimum": 5.595998379334261,
+    "pixelsBelow4_5": 0
+  }
+}

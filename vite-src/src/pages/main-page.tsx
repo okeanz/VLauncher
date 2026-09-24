@@ -1,24 +1,23 @@
-import { Container, Stack, Center } from '@mantine/core';
-import { ValheimPath } from '@/components/valheim-path.tsx';
-import { ValheimOptimization } from '@/components/valheim-optimization.tsx';
-import { ServerCheck } from '@/components/server-check.tsx';
-import { ValheimLaunch } from '@/components/valheim-launch.tsx';
-import { LoadingBar } from '@/components/loading-bar.tsx';
+import { TitleBar } from '@/components/title-bar';
+import { Hero } from '@/components/hero';
+import { VoyageBar } from '@/components/voyage-bar';
+import { LoadingBar } from '@/components/loading-bar';
+import { ValheimLaunch } from '@/components/valheim-launch';
+import { SettingsFooter } from '@/components/settings-footer';
 
 export default function MainPage() {
   return (
-    <Container size="md" py="md" h="85vh" style={{ justifyContent: 'flex-end' }}>
-      <ServerCheck />
-      <Stack gap="lg" h="85vh" justify="flex-end">
-        <ValheimPath />
-        <ValheimOptimization />
-
-        <LoadingBar />
-
-        <Center mt="md">
+    <div className="ns-root">
+      <Hero />
+      <TitleBar />
+      <div className="ns-dock">
+        <VoyageBar />
+        <div className="ns-dock-main">
+          <LoadingBar />
           <ValheimLaunch />
-        </Center>
-      </Stack>
-    </Container>
+        </div>
+        <SettingsFooter />
+      </div>
+    </div>
   );
 }

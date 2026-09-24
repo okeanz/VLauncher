@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { MantineProvider } from '@mantine/core';
 const native = vi.hoisted(() => ({
@@ -23,7 +23,9 @@ import { ValheimPath } from '../src/components/valheim-path';
 import { ValheimOptimization } from '../src/components/valheim-optimization';
 import { LoadingBar } from '../src/components/loading-bar';
 import { ServerSelect } from '../src/components/server-select';
+import { VoyageBar } from '../src/components/voyage-bar';
 import {
+  updateProgress,
   beginInstall,
   installReady,
   resetProgress,
@@ -142,7 +144,7 @@ it('disables folder selection, optimization and retry while updating', () => {
   ui();
   for (const name of ['Обзор', 'Проверить обновления'])
     expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('switch') as HTMLInputElement).disabled).toBe(true);
 });
 it('shows an error and allows retry without falsely enabling launch', async () => {
   store.dispatch(setError('Повреждён архив'));
@@ -177,7 +179,7 @@ it('does not change the saved path when folder selection is cancelled', async ()
 });
 it('waits for acknowledgement before showing optimization as enabled', async () => {
   ui();
-  const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+  const checkbox = screen.getByRole('switch') as HTMLInputElement;
   fireEvent.click(checkbox);
   await waitFor(() =>
     expect(native.dispatch).toHaveBeenCalledWith('fileLoader', 'EnableValheimOptimization', {
@@ -220,7 +222,7 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
       </MantineProvider>
     </Provider>,
   );
-  expect(screen.getByLabelText('Сервер готов')).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Сервер готов' })).toBeTruthy();
   fireEvent.click(screen.getByRole('textbox', { name: 'Сервер' }));
   expect(await screen.findByText('Kuberheim · localmods r8')).toBeTruthy();
   fireEvent.click(await screen.findByText('Проверка r9 · тест · остановлен · без модпака'));
@@ -233,7 +235,7 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
   );
   store.dispatch(setError('stop'));
   expect(await screen.findByRole('button', { name: 'Сервер остановлен' })).toBeTruthy();
-  expect(screen.getByLabelText('Сервер остановлен')).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Сервер остановлен' })).toBeTruthy();
   store.dispatch(
     setServers([
       {
@@ -248,14 +250,49 @@ it('offers test servers in the server menu and switches to the chosen one', asyn
     ]),
   );
   expect(await screen.findByRole('button', { name: 'Сервер запускается…' })).toBeTruthy();
-  expect(screen.getByLabelText('Сервер запускается')).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Сервер запускается' })).toBeTruthy();
   store.dispatch(setServers(null));
   store.dispatch(selectServer('main'));
+});
+it('sails the drakkar to the reported install percent', () => {
+  store.dispatch(beginInstall('C:/Game'));
+  render(
+    <Provider store={store}>
+      <MantineProvider>
+        <VoyageBar />
+        <LoadingBar />
+      </MantineProvider>
+    </Provider>,
+  );
+  const bar = screen.getByRole('progressbar', { name: 'Установка модпака' });
+  expect(bar.getAttribute('aria-valuenow')).toBeNull();
+  act(() => {
+    store.dispatch(updateProgress('Скачивание plugins', 44));
+  });
+  expect(bar.getAttribute('aria-valuenow')).toBe('44');
+  expect(screen.getByText('44%')).toBeTruthy();
+  expect(screen.getByText('Скачивание plugins')).toBeTruthy();
+  expect(screen.getByText('Ставим localmods-1-0-12-r8')).toBeTruthy();
+  act(() => {
+    store.dispatch(installReady('C:/Game', 'localmods-1-0-12-r8'));
+  });
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(screen.getByText('Совпадает с сервером')).toBeTruthy();
+});
+it('asks for the game folder when none is found', () => {
+  store.dispatch(setValheimPath.fulfilled({ path: '', isValid: false }, 'test', ''));
+  ui();
+  expect(screen.getByText('Не найдена папка с установленным Valheim')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Указать папку Valheim' }));
+  expect(native.dialog).toHaveBeenCalled();
+  expect(
+    (screen.getByRole('button', { name: 'Укажите папку Valheim' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });
 it('shows optimization transport failures and releases controls', async () => {
   native.dispatch.mockRejectedValueOnce(new Error('disconnected'));
   ui();
-  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('switch'));
   await waitFor(() => expect(screen.getByText('Не удалось изменить настройки')).toBeTruthy());
   expect(store.getState().progress.configuring).toBe(false);
 });

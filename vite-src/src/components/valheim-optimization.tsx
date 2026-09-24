@@ -1,4 +1,4 @@
-import { Checkbox, Card, Text, Group } from '@mantine/core';
+import { Switch } from '@mantine/core';
 import { useValheimOptimization } from '@/hooks/use-valheim-optimization.ts';
 
 export const ValheimOptimization = () => {
@@ -6,25 +6,26 @@ export const ValheimOptimization = () => {
     useValheimOptimization();
 
   return (
-    <Card>
-      <Group justify="space-between" align="center">
+    <div className="ns-field">
+      <div className="ns-label">оптимизация</div>
+      <div className="ns-toggle">
         <div>
-          <Text size="sm" fw={500}>
-            Оптимизация Valheim
-          </Text>
-          <Text size="xs" c="dimmed">
+          <div style={{ fontSize: 15, fontWeight: 700 }}>Оптимизация Valheim</div>
+          <div className="ns-hint">
             {valheimPathValid
               ? 'Включает оптимизации производительности в Boot.config'
-              : 'Требуется валидный путь к Valheim'}
-          </Text>
+              : 'Недоступно, пока не выбрана папка игры или идёт установка'}
+          </div>
         </div>
-        <Checkbox
+        <Switch
+          aria-label="Оптимизация Valheim"
           checked={valheimOptimization}
           onChange={(event) => handleOptimizationChange(event.currentTarget.checked)}
           disabled={!valheimPathValid}
+          color="#c8243a"
           size="md"
         />
-      </Group>
-    </Card>
+      </div>
+    </div>
   );
 };

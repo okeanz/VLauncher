@@ -41,27 +41,32 @@ function syncRelease(release: ServerRelease | null) {
   autoUpdatedRelease = key!;
   void store.dispatch(loadArchives(settings.valheimPath));
 }
+/**
+ * Stops the installer, then the app. Used by the native close event and by the close button
+ * of the borderless window, which has no system frame of its own.
+ */
+export async function closeLauncher() {
+  if (closing) return;
+  closing = true;
+  if (helloTimer) clearInterval(helloTimer);
+  if (!store.getState().progress.connected) {
+    await app.killProcess();
+    return;
+  }
+  closeTimeout = setTimeout(() => {
+    void app.killProcess();
+  }, 5000);
+  try {
+    await extensions.dispatch('fileLoader', 'terminate');
+  } catch {
+    clearTimeout(closeTimeout);
+    await app.killProcess();
+  }
+}
 export const registerEvents = async () => {
   closing = false;
   autoUpdatedRelease = '';
-  await events.on('windowClose', async () => {
-    if (closing) return;
-    closing = true;
-    if (helloTimer) clearInterval(helloTimer);
-    if (!store.getState().progress.connected) {
-      await app.killProcess();
-      return;
-    }
-    closeTimeout = setTimeout(() => {
-      void app.killProcess();
-    }, 5000);
-    try {
-      await extensions.dispatch('fileLoader', 'terminate');
-    } catch {
-      clearTimeout(closeTimeout);
-      await app.killProcess();
-    }
-  });
+  await events.on('windowClose', closeLauncher);
   await events.on('extensionToApp', async (ev) => {
     const { event, data } = ev.detail;
     switch (event) {
@@ -97,7 +102,7 @@ export const registerEvents = async () => {
         break;
       }
       case 'installProgress':
-        store.dispatch(updateProgress(data.currentFile));
+        store.dispatch(updateProgress(data.currentFile, data.percent));
         break;
       case 'operationError':
         store.dispatch(setError(data.error));

@@ -501,7 +501,7 @@ export async function installRelease(
   base: string,
   cache: string,
   signal: AbortSignal,
-  progress: (text: string) => void = () => {},
+  progress: (text: string, percent: number) => void = () => {},
   request: typeof fetch = fetch,
   server = 'main',
 ) {
@@ -509,28 +509,56 @@ export async function installRelease(
   const get = (url: string) => download(url, signal, request);
   await recover(game);
   const manifest = await fetchManifest(baseUrl.href, signal, request, server);
-  progress('Ревизия ' + manifest.releaseId);
   await fs.mkdir(cache, { recursive: true });
+  const archives = archiveNames.map((name) => manifest.archives.find((a) => a.name === name)!);
+  const cached = async (a: (typeof archives)[number]) => {
+    const blob = path.join(cache, a.sha256 + '.zip');
+    return (
+      (await exists(blob)) &&
+      (await fs.stat(blob)).size === a.size &&
+      (await hashFile(blob)) === a.sha256
+    );
+  };
+  const missing = new Set<string>();
+  for (const a of archives) if (!(await cached(a))) missing.add(a.name);
+  // Percent of the whole install: downloaded bytes, then each unpacked archive, then the commit.
+  // Unpacking is weighted at a third of an archive's size, the final commit at a twentieth.
+  const unpackWeight = (a: (typeof archives)[number]) => a.size / 3 + 1;
+  const downloadTotal = archives.reduce((sum, a) => sum + (missing.has(a.name) ? a.size : 0), 0);
+  const unpackTotal = archives.reduce((sum, a) => sum + unpackWeight(a), 0);
+  const commitWeight = (downloadTotal + unpackTotal) / 20;
+  const total = downloadTotal + unpackTotal + commitWeight;
+  let done = 0;
+  let text = 'Ревизия ' + manifest.releaseId;
+  let reported = -1;
+  const report = (next = text) => {
+    const percent = Math.min(100, Math.floor((done / total) * 100));
+    if (next === text && percent === reported) return;
+    text = next;
+    reported = percent;
+    progress(text, percent);
+  };
+  report(text);
   const work = await fs.mkdtemp(path.join(cache, 'install-'));
   const stage = path.join(work, 'stage');
   await fs.mkdir(stage);
   try {
-    for (const name of archiveNames) {
-      const a = manifest.archives.find((a) => a.name === name)!;
+    for (const a of archives) {
+      const name = a.name;
       const blob = path.join(cache, a.sha256 + '.zip');
-      if (
-        !(await exists(blob)) ||
-        (await fs.stat(blob)).size !== a.size ||
-        (await hashFile(blob)) !== a.sha256
-      ) {
-        progress('Скачивание ' + name);
+      if (missing.has(name)) {
+        report('Скачивание ' + name);
         const r = await get(new URL(a.url, baseUrl).href);
         if (!r.body) throw new Error('Empty download');
         let bytes = 0;
         const counter = new Transform({
-          transform(chunk, _encoding, done) {
+          transform(chunk, _encoding, callback) {
             bytes += chunk.length;
-            done(bytes > a.size ? new Error('Download exceeds declared size') : null, chunk);
+            if (bytes <= a.size) {
+              done += chunk.length;
+              report();
+            }
+            callback(bytes > a.size ? new Error('Download exceeds declared size') : null, chunk);
           },
         });
         const partial = path.join(work, name + '.part');
@@ -541,16 +569,20 @@ export async function installRelease(
           throw new Error('Archive checksum or size mismatch: ' + name);
         await fs.rename(partial, blob);
       }
-      progress('Распаковка ' + name);
+      report('Распаковка ' + name);
       await extractSafe(
         blob,
         name === 'BepInEx' ? stage : path.join(stage, 'BepInEx', name),
         signal,
       );
+      done += unpackWeight(a);
+      report();
     }
     signal.throwIfAborted();
-    progress('Установка проверенных файлов');
+    report('Установка проверенных файлов');
     await commitInstall(game, stage, manifest.releaseId, signal);
+    done = total;
+    report();
     await pruneCache(
       cache,
       server,
