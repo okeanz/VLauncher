@@ -110,6 +110,7 @@ describe('extension commands', () => {
     expect(mocks.notify).not.toHaveBeenCalled();
   });
   it('routes a valid installation to the transaction engine', async () => {
+    vi.stubEnv('VITE_MANIFEST_KEY', 'build-key');
     const { send } = await fixture();
     await send('LoadFiles', { valheimPath: 'C:/Game' });
     expect(mocks.install).toHaveBeenCalledWith(
@@ -120,6 +121,7 @@ describe('extension commands', () => {
       expect.any(Function),
       expect.any(Function),
       'main',
+      'build-key',
     );
     expect(mocks.notify).toHaveBeenCalledWith('installReady', {
       gamePath: 'C:/Game',

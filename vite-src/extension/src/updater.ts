@@ -73,8 +73,19 @@ export const fallbackServers: LauncherServer[] = [
     manifest: manifestPathOf('main'),
   },
 ];
-export function validateServers(value: unknown): LauncherServer[] {
+/** A server list older than this says nothing about readiness: the panel that wrote it may be down. */
+export const staleServerListMs = 10 * 60_000;
+/**
+ * observedAt: when the list was served (the HTTP Date header, the source's clock rather than the player's).
+ * A list with updatedAt (the bucket's copy) that old reports every server as unavailable.
+ */
+export function validateServers(value: unknown, observedAt?: number): LauncherServer[] {
   const list = (value as { schemaVersion?: number; servers?: unknown[] })?.servers;
+  const updatedAt = Date.parse(String((value as { updatedAt?: unknown })?.updatedAt));
+  const stale =
+    Number.isFinite(updatedAt) &&
+    Number.isFinite(observedAt) &&
+    (observedAt as number) - updatedAt > staleServerListMs;
   if ((value as { schemaVersion?: number })?.schemaVersion !== 1 || !Array.isArray(list))
     throw new Error('Invalid server list');
   const seen = new Set<string>();
@@ -93,8 +104,12 @@ export function validateServers(value: unknown): LauncherServer[] {
       kind: s.id === 'main' ? 'main' : 'test',
       name: optionalText(s.name, 64) || (s.id === 'main' ? 'Основной сервер' : 'Тестовый сервер'),
       address,
-      running: typeof s.running === 'boolean' ? s.running : null,
-      state: serverStates.has(s.state as ServerState) ? (s.state as ServerState) : null,
+      running: stale ? null : typeof s.running === 'boolean' ? s.running : null,
+      state: stale
+        ? 'unavailable'
+        : serverStates.has(s.state as ServerState)
+          ? (s.state as ServerState)
+          : null,
       releaseId:
         typeof s.releaseId === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(s.releaseId)
           ? s.releaseId
@@ -471,22 +486,47 @@ async function download(url: string, signal: AbortSignal, request: typeof fetch)
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
   return response;
 }
+/**
+ * Parses a published JSON file. With a public key (the player build) the file must carry a valid ed25519
+ * `signature` over the JSON of everything else, as kuberheim's src/signing.mjs writes it: key order survives
+ * JSON.parse, so JSON.stringify of the rest gives back the signed bytes.
+ */
+export function readSigned(text: string, publicKey?: string): unknown {
+  const value: unknown = JSON.parse(text);
+  if (!publicKey) return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Unsigned update data');
+  const { signature, ...rest } = value as Record<string, unknown>;
+  const key = crypto.createPublicKey({
+    key: Buffer.from(publicKey, 'base64'),
+    format: 'der',
+    type: 'spki',
+  });
+  if (
+    typeof signature !== 'string' ||
+    !crypto.verify(null, Buffer.from(JSON.stringify(rest)), key, Buffer.from(signature, 'base64'))
+  )
+    throw new Error('Подпись данных сервера обновлений не сходится');
+  return rest;
+}
 /** Reads the release currently published by the server without touching the game folder. */
 export async function fetchManifest(
   base: string,
   signal: AbortSignal,
   request: typeof fetch = fetch,
   server = 'main',
+  publicKey?: string,
 ): Promise<Manifest> {
   if (!validServerId(server)) throw new Error('Invalid server id');
   const baseUrl = baseUrlOf(base);
   const response = await download(new URL(manifestPathOf(server), baseUrl).href, signal, request);
-  return validateManifest(await response.json(), baseUrl.href);
+  return validateManifest(readSigned(await response.text(), publicKey), baseUrl.href);
 }
 export async function fetchServers(
   base: string,
   signal: AbortSignal,
   request: typeof fetch = fetch,
+  publicKey?: string,
 ): Promise<LauncherServer[]> {
   const baseUrl = baseUrlOf(base);
   signal.throwIfAborted();
@@ -497,7 +537,10 @@ export async function fetchServers(
   });
   if (response.status === 404) return fallbackServers;
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-  return validateServers(await response.json());
+  return validateServers(
+    readSigned(await response.text(), publicKey),
+    Date.parse(response.headers.get('date') ?? ''),
+  );
 }
 export async function installRelease(
   game: string,
@@ -507,11 +550,12 @@ export async function installRelease(
   progress: (text: string, percent: number) => void = () => {},
   request: typeof fetch = fetch,
   server = 'main',
+  publicKey?: string,
 ) {
   const baseUrl = baseUrlOf(base);
   const get = (url: string) => download(url, signal, request);
   await recover(game);
-  const manifest = await fetchManifest(baseUrl.href, signal, request, server);
+  const manifest = await fetchManifest(baseUrl.href, signal, request, server, publicKey);
   await fs.mkdir(cache, { recursive: true });
   const archives = archiveNames.map((name) => manifest.archives.find((a) => a.name === name)!);
   const cached = async (a: (typeof archives)[number]) => {

@@ -44,8 +44,10 @@ function allowedServer(id: unknown): string {
     throw new Error('Неверный сервер');
   return id;
 }
+/** The player build checks every manifest and server list against this key; the admin build has none. */
+const manifestKey = () => process.env.VITE_MANIFEST_KEY || undefined;
 const listServers = async (signal: AbortSignal) =>
-  visibleServers(await fetchServers(apiBase(), signal), profile());
+  visibleServers(await fetchServers(apiBase(), signal, fetch, manifestKey()), profile());
 async function findServer(id: string) {
   const server = (await listServers(AbortSignal.timeout(15000))).find((s) => s.id === id);
   if (!server) throw new Error('Выбранного сервера больше нет, выберите другой');
@@ -94,6 +96,7 @@ export const controller = new Controller({
       (currentFile, percent) => sendProgressEvent('installProgress', { currentFile, percent }),
       fetch,
       server,
+      manifestKey(),
     );
     sendProgressEvent('optimizationReady', {
       gamePath: game,
@@ -102,7 +105,9 @@ export const controller = new Controller({
     return release;
   },
   currentRelease: async (server) =>
-    releaseInfo(await fetchManifest(apiBase(), AbortSignal.timeout(15000), fetch, server)),
+    releaseInfo(
+      await fetchManifest(apiBase(), AbortSignal.timeout(15000), fetch, server, manifestKey()),
+    ),
   launch: async (game, id) => {
     const server = await findServer(id);
     if (server.running === false) throw new Error(`Сервер «${server.name}» остановлен`);

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import AdmZip from 'adm-zip';
+import crypto from 'node:crypto';
 import {
   safeRelative,
   validateManifest,
@@ -13,6 +14,8 @@ import {
   fetchServers,
   validateServers,
   visibleServers,
+  readSigned,
+  staleServerListMs,
   releaseInfo,
   recover,
   exists,
@@ -530,6 +533,65 @@ describe('downloads and cache', () => {
     expect(visibleServers(servers, 'dev')).toEqual(servers);
     expect(visibleServers(servers, undefined)).toEqual(servers);
     expect(visibleServers(servers, 'prod').map((s) => s.id)).toEqual(['main']);
+  });
+  it('trusts signed files only when the build carries a key', async () => {
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+    const key = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    // The same as kuberheim's signedJson: signature over JSON.stringify of the rest.
+    const signed = (value: object, by = privateKey) =>
+      JSON.stringify({
+        ...value,
+        signature: crypto.sign(null, Buffer.from(JSON.stringify(value)), by).toString('base64'),
+      });
+    const list = {
+      schemaVersion: 1,
+      updatedAt: '2026-10-06T12:00:00.000Z',
+      servers: [
+        { id: 'main', manifest: 'files/launcher-manifest.json', state: 'ready', running: true },
+      ],
+    };
+    expect(readSigned(signed(list), key)).toEqual(list);
+    expect(readSigned(JSON.stringify(list))).toEqual(list);
+    expect(() => readSigned(JSON.stringify(list), key)).toThrow(/Подпись/);
+    expect(() => readSigned('null', key)).toThrow(/Unsigned/);
+    const tampered = signed(list).replace('"ready"', '"stopped"');
+    expect(() => readSigned(tampered, key)).toThrow(/Подпись/);
+    const other = crypto.generateKeyPairSync('ed25519').privateKey;
+    expect(() => readSigned(signed(list, other), key)).toThrow(/Подпись/);
+    // Served by the bucket a minute after the panel wrote it: as is. Ten minutes later: unknown.
+    const serve = (date: string) =>
+      (async () => new Response(signed(list), { headers: { date } })) as unknown as typeof fetch;
+    const fresh = await fetchServers(
+      'https://mods.example',
+      signal(),
+      serve('Tue, 06 Oct 2026 12:01:00 GMT'),
+      key,
+    );
+    expect([fresh[0].state, fresh[0].running]).toEqual(['ready', true]);
+    const late = new Date(Date.parse(list.updatedAt) + staleServerListMs + 1000).toUTCString();
+    const stale = await fetchServers('https://mods.example', signal(), serve(late), key);
+    expect([stale[0].state, stale[0].running]).toEqual(['unavailable', null]);
+    await expect(
+      fetchServers(
+        'https://mods.example',
+        signal(),
+        (async () => Response.json(list)) as unknown as typeof fetch,
+        key,
+      ),
+    ).rejects.toThrow(/Подпись/);
+    const r = release();
+    const unsigned = r.request as typeof fetch;
+    await expect(
+      fetchManifest('https://mods.example', signal(), unsigned, 'main', key),
+    ).rejects.toThrow(/Подпись/);
+    const signedManifest = (async (url: string | URL | Request) =>
+      String(url).endsWith('/files/launcher-manifest.json')
+        ? new Response(signed(r.manifest))
+        : unsigned(url)) as typeof fetch;
+    expect(
+      (await fetchManifest('https://mods.example', signal(), signedManifest, 'main', key))
+        .releaseId,
+    ).toBe(r.manifest.releaseId);
   });
   it('installs the modpack of a test server from its own manifest', async () => {
     const r = release();

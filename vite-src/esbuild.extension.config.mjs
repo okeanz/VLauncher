@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { loadEnv } from 'vite';
+import { createPublicKey } from 'node:crypto';
 // The same env files as the interface: .env.dev / .env.prod for profile builds, .env otherwise.
 const env = loadEnv(process.env.VLAUNCHER_PROFILE || 'production', process.cwd(), 'VITE_');
 const profile = process.env.VITE_PROFILE || env.VITE_PROFILE || 'dev';
@@ -16,6 +17,14 @@ if (profile === 'prod' && parsed.protocol !== 'https:')
   throw new Error('The player build (prod) downloads from the public bucket over HTTPS only');
 if (parsed.username || parsed.password || parsed.hash || parsed.search)
   throw new Error('VITE_API_URL must not contain credentials, query or fragment');
+// The player build trusts only files signed by the panel's ed25519 key (kuberheim MCP bucket: publicKey).
+const manifestKey = process.env.VITE_MANIFEST_KEY || env.VITE_MANIFEST_KEY || '';
+if (profile === 'prod' && !manifestKey)
+  throw new Error('The player build (prod) needs VITE_MANIFEST_KEY, the panel signing key');
+if (manifestKey) {
+  const key = createPublicKey({ key: Buffer.from(manifestKey, 'base64'), format: 'der', type: 'spki' });
+  if (key.asymmetricKeyType !== 'ed25519') throw new Error('VITE_MANIFEST_KEY must be an ed25519 key');
+}
 await build({
   entryPoints: ['extension/src/index.ts'],
   bundle: true,
@@ -27,5 +36,6 @@ await build({
   define: {
     'process.env.VITE_API_URL': JSON.stringify(url),
     'process.env.VITE_PROFILE': JSON.stringify(profile),
+    'process.env.VITE_MANIFEST_KEY': JSON.stringify(manifestKey),
   },
 });

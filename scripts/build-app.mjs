@@ -21,6 +21,7 @@ const env = { ...process.env, VLAUNCHER_PROFILE: profile };
 delete env.VITE_API_URL;
 delete env.VITE_PROFILE;
 delete env.VITE_SERVER_PICKER;
+delete env.VITE_MANIFEST_KEY;
 const run = (args, cwd = root) => execFileSync(process.execPath, args, { cwd, env, stdio: 'inherit' });
 
 execSync('npm run check', { cwd: path.join(root, 'vite-src'), env, stdio: 'inherit' });
