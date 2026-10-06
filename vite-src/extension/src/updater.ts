@@ -105,6 +105,9 @@ export function validateServers(value: unknown): LauncherServer[] {
   if (!servers.some((s) => s.id === 'main')) throw new Error('Server list has no main server');
   return servers;
 }
+/** The player build (prod) plays only on the main server, whatever the published list holds. */
+export const visibleServers = (servers: LauncherServer[], profile: string | undefined) =>
+  profile === 'prod' ? servers.filter((s) => s.id === 'main') : servers;
 const roots = new Set(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']);
 const mirroredRoots = ['BepInEx/plugins', 'BepInEx/patchers'];
 // Config directories owned by the release. The mods behind them read every yml in their directory

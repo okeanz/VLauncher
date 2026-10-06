@@ -2,7 +2,9 @@
   "name": "vlauncher-desktop",
   "private": true,
   "scripts": {
-    "build:app": "npm --prefix vite-src run check && node vite-src/node_modules/@neutralinojs/neu/bin/neu.js build",
+    "build:app": "node scripts/build-app.mjs dev",
+    "build:app:dev": "node scripts/build-app.mjs dev",
+    "build:app:prod": "node scripts/build-app.mjs prod",
     "check": "npm --prefix vite-src run check",
     "test": "npm --prefix vite-src test"
   }

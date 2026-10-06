@@ -1,5 +1,5 @@
 // Запуск VLauncher с автоматическим SSH-туннелем к панели kuberheim на Mac.
-// Лаунчер собран с VITE_API_URL=http://127.0.0.1:4179/, туннель пробрасывает
+// Админская сборка (npm run build:app:dev) смотрит на http://127.0.0.1:4179/, туннель пробрасывает
 // 127.0.0.1:4179 -> 127.0.0.1:4178 на хосте alfa@192.168.50.181.
 import { spawn } from 'node:child_process';
 import { existsSync, openSync } from 'node:fs';
@@ -8,7 +8,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const executable = path.join(root, 'dist/VLauncher/VLauncher-win_x64.exe');
+const executable = path.join(root, 'dist/VLauncher-dev/VLauncher-win_x64.exe');
 const identity = path.join(os.homedir(), '.ssh/kuberheim_macos');
 const knownHosts = process.env.KUBERHEIM_KNOWN_HOSTS || 'E:/Github/kuberheim/.local/known_hosts';
 const host = process.env.KUBERHEIM_SSH_HOST || 'alfa@192.168.50.181';
@@ -25,7 +25,7 @@ async function healthy() {
 }
 
 try {
-  if (!existsSync(executable)) throw new Error('Сначала соберите VLauncher (npm run build:app): исполняемый файл не найден.');
+  if (!existsSync(executable)) throw new Error('Сначала соберите VLauncher (npm run build:app:dev): исполняемый файл не найден.');
   if (!(await healthy())) {
     if (!existsSync(identity)) throw new Error('SSH-ключ kuberheim_macos не найден.');
     if (!existsSync(knownHosts)) throw new Error(`known_hosts не найден: ${knownHosts}`);

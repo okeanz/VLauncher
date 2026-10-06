@@ -12,6 +12,7 @@ import {
   releaseInfo,
   serverReady,
   validServerId,
+  visibleServers,
   type LauncherServer,
 } from './updater.js';
 import { sendProgressEvent } from './ws-events/progress-events.js';
@@ -35,10 +36,18 @@ function apiBase() {
   if (!base) throw new Error('Не настроен адрес сервера обновлений');
   return base;
 }
+// Read on each call, not at load: esbuild inlines it in builds, tests set it per case.
+const profile = () => process.env.VITE_PROFILE;
+/** Rejects a server the build does not offer: the player build knows only the main one. */
+function allowedServer(id: unknown): string {
+  if (!validServerId(id) || (profile() === 'prod' && id !== 'main'))
+    throw new Error('Неверный сервер');
+  return id;
+}
+const listServers = async (signal: AbortSignal) =>
+  visibleServers(await fetchServers(apiBase(), signal), profile());
 async function findServer(id: string) {
-  const server = (await fetchServers(apiBase(), AbortSignal.timeout(15000))).find(
-    (s) => s.id === id,
-  );
+  const server = (await listServers(AbortSignal.timeout(15000))).find((s) => s.id === id);
   if (!server) throw new Error('Выбранного сервера больше нет, выберите другой');
   return server;
 }
@@ -51,7 +60,7 @@ let selectedServer = 'main';
 async function pollServers() {
   let servers: LauncherServer[] | null = null;
   try {
-    servers = await fetchServers(apiBase(), AbortSignal.timeout(15000));
+    servers = await listServers(AbortSignal.timeout(15000));
     sendProgressEvent('serverList', { servers });
   } catch {
     sendProgressEvent('serverList', { servers: null });
@@ -143,8 +152,7 @@ export async function messageHandler(message: MessageEvent) {
       return;
     }
     if (event === 'SelectServer') {
-      if (!validServerId(data?.serverId)) throw new Error('Неверный сервер');
-      selectedServer = data.serverId;
+      selectedServer = allowedServer(data?.serverId);
       void pollServers();
       return;
     }
@@ -159,8 +167,7 @@ export async function messageHandler(message: MessageEvent) {
       if (typeof data?.valheimPath !== 'string' || !path.isAbsolute(data.valheimPath))
         throw new Error('Неверный путь к игре');
       if (event === 'LoadFiles' || event === 'LaunchGame') {
-        const server = data.serverId ?? 'main';
-        if (!validServerId(server)) throw new Error('Неверный сервер');
+        const server = allowedServer(data.serverId ?? 'main');
         if (event === 'LoadFiles') await controller.update(data.valheimPath, server);
         else await controller.launch(data.valheimPath, server);
       } else {

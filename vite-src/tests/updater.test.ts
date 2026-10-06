@@ -12,6 +12,7 @@ import {
   fetchManifest,
   fetchServers,
   validateServers,
+  visibleServers,
   releaseInfo,
   recover,
   exists,
@@ -516,6 +517,19 @@ describe('downloads and cache', () => {
       },
     ])
       expect(() => validateServers(broken)).toThrow();
+  });
+  it('keeps only the main server for the player build', () => {
+    const test = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const servers = validateServers({
+      schemaVersion: 1,
+      servers: [
+        { id: test, manifest: `files/servers/${test}/launcher-manifest.json` },
+        { id: 'main', manifest: 'files/launcher-manifest.json' },
+      ],
+    });
+    expect(visibleServers(servers, 'dev')).toEqual(servers);
+    expect(visibleServers(servers, undefined)).toEqual(servers);
+    expect(visibleServers(servers, 'prod').map((s) => s.id)).toEqual(['main']);
   });
   it('installs the modpack of a test server from its own manifest', async () => {
     const r = release();

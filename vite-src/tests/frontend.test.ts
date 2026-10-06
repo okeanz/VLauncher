@@ -42,6 +42,7 @@ import {
   setServers,
   selectServer,
   selectedServerInfo,
+  fileServerState,
 } from '../src/features/progress/progress.slice';
 import { chooseServer } from '../src/shared/actions/choose-server';
 import { getValheimPath } from '../src/utils/get-valheim-path';
@@ -136,6 +137,15 @@ describe('launch state', () => {
       expect(canLaunch(s, 'game')).toBe(false);
     },
   );
+  it('reports the update source from the server list poll, not a ping', () => {
+    let s = reduce(undefined, setConnected(true));
+    expect(fileServerState(s)).toBe('loading');
+    s = reduce(s, setServers(null));
+    expect(fileServerState(s)).toBe('offline');
+    s = reduce(s, setServers(servers));
+    expect(fileServerState(s)).toBe('online');
+    expect(fileServerState(reduce(s, resetProgress()))).toBe('online');
+  });
   it('keeps readiness per server and blocks a stopped server', () => {
     let s = reduce(reduce(undefined, setConnected(true)), setServers(servers));
     s = reduce(s, selectServer(testId));

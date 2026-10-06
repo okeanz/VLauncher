@@ -47,6 +47,8 @@ vi.mock('../extension/src/updater', () => ({
     s.state ? s.state === 'ready' : s.running !== false,
   validServerId: (id: unknown) =>
     typeof id === 'string' && /^(main|[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(id),
+  visibleServers: (servers: MockServer[], profile: string | undefined) =>
+    profile === 'prod' ? servers.filter((s) => s.id === 'main') : servers,
 }));
 vi.mock('../extension/src/utils/boot-config', () => ({
   setOptimization: mocks.optimize,
@@ -66,6 +68,7 @@ async function fixture() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   vi.stubEnv('VITE_API_URL', 'https://mods.example/');
   mocks.execFile.mockImplementation((_file, _args, _options, callback) =>
     callback(null, { stdout: '' }),
@@ -157,6 +160,44 @@ describe('extension commands', () => {
     );
     await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
     expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
+  });
+  it('offers only the main server in the player build', async () => {
+    vi.stubEnv('VITE_PROFILE', 'prod');
+    const { send } = await fixture();
+    const main = {
+      id: 'main',
+      kind: 'main',
+      name: 'Main',
+      address: null,
+      running: true,
+      releaseId: 'r1',
+    };
+    const test = {
+      ...main,
+      id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      kind: 'test',
+      name: 'Тест',
+    };
+    mocks.servers.mockResolvedValue([main, test]);
+    await send('SelectServer', { serverId: 'main' });
+    await vi.waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith('serverList', { servers: [main] }),
+    );
+    for (const event of ['SelectServer', 'LoadFiles', 'LaunchGame']) {
+      mocks.notify.mockClear();
+      await send(event, { valheimPath: 'C:/Game', serverId: test.id });
+      expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
+    }
+    expect(mocks.install).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      test.id,
+    );
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
   it('holds the launch while the game on the server is still loading', async () => {
     const { send } = await fixture();

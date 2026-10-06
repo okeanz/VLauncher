@@ -51,5 +51,7 @@ vite-src/.env
 coverage/
 .test-tmp/
 !.env.example
+!.env.dev
+!.env.prod
 
 launcher-tunnel.log

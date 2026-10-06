@@ -35,6 +35,8 @@ export const initialState = {
   serverRelease: null as ServerRelease | null,
   /** Servers published by the panel; null until the first successful poll. */
   servers: null as LauncherServer[] | null,
+  /** The installer has polled the server list at least once, successfully or not. */
+  serversPolled: false,
   selectedServer: 'main',
   readyServer: '',
   requestedPath: '',
@@ -55,6 +57,12 @@ export const selectedServerInfo = (state: ProgressState): LauncherServer | null 
     ? { ...listed, releaseId: state.serverRelease.releaseId }
     : listed;
 };
+/**
+ * Reachability of the update source for the title bar: the installer polls the server list
+ * every 30 seconds, from the panel (admin build) or the public bucket (player build) alike.
+ */
+export const fileServerState = (state: ProgressState): 'loading' | 'online' | 'offline' =>
+  !state.serversPolled ? 'loading' : state.servers ? 'online' : 'offline';
 export const canLaunch = (state: ProgressState, game: string) =>
   Boolean(
     game &&
@@ -106,6 +114,7 @@ export const progressSlice = createSlice({
     },
     setServers(state, action: PayloadAction<LauncherServer[] | null>) {
       state.servers = action.payload;
+      state.serversPolled = true;
     },
     selectServer(state, action: PayloadAction<string>) {
       if (state.selectedServer === action.payload) return;
@@ -174,6 +183,7 @@ export const progressSlice = createSlice({
       connected: state.connected,
       serverRelease: state.serverRelease,
       servers: state.servers,
+      serversPolled: state.serversPolled,
       selectedServer: state.selectedServer,
     }),
   },
