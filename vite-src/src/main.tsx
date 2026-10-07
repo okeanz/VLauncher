@@ -13,7 +13,8 @@ import '@fontsource/alegreya-sans/700.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './north-storm.css';
-import { init } from '@neutralinojs/lib';
+import { init, window as appWindow } from '@neutralinojs/lib';
+import { fitWindow } from '@/utils/fit-window';
 import { store } from '@/shared/store';
 import { setValheimPath } from '@/features/settings/settings.actions.ts';
 import { registerEvents } from '@/events.ts';
@@ -25,6 +26,7 @@ import { serverPicker } from '@/constants/build';
 registerEvents().then(async () => {
   try {
     init();
+    void fitWindow(window, appWindow);
 
     // Players always play on the main server; only admin builds remember another one.
     store.dispatch(selectServer(serverPicker ? await storedServer() : 'main'));

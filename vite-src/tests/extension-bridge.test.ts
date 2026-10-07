@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   shutdown: vi.fn(async () => {}),
   spawn: vi.fn(),
   execFile: vi.fn(),
+  log: vi.fn(async () => {}),
   servers: vi.fn(
     async (): Promise<MockServer[]> => [
       {
@@ -57,6 +58,10 @@ vi.mock('../extension/src/utils/boot-config', () => ({
 vi.mock('../extension/src/ws-events/progress-events', () => ({ sendProgressEvent: mocks.notify }));
 vi.mock('../extension/src/websocket/heartbeat', () => ({ receivedPong: mocks.pong }));
 vi.mock('../extension/src/on-exit', () => ({ shutdown: mocks.shutdown }));
+vi.mock('../extension/src/utils/file-log', () => ({
+  appendLog: mocks.log,
+  describeError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 vi.mock('node:fs/promises', () => ({ default: { stat: mocks.stat } }));
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn, execFile: mocks.execFile }));
 async function fixture() {
@@ -162,6 +167,30 @@ describe('extension commands', () => {
     );
     await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
     expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
+  });
+  it('tells why the server list is unreachable and logs each new reason once', async () => {
+    const { send } = await fixture();
+    mocks.servers.mockRejectedValue(new Error('fetch failed (ECONNRESET)'));
+    await send('SelectServer', { serverId: 'main' });
+    await vi.waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith('serverList', {
+        servers: null,
+        error: 'fetch failed (ECONNRESET)',
+      }),
+    );
+    await send('SelectServer', { serverId: 'main' });
+    await vi.waitFor(() =>
+      expect(mocks.notify.mock.calls.filter((c) => c[0] === 'serverList')).toHaveLength(2),
+    );
+    expect(mocks.log).toHaveBeenCalledTimes(1);
+    expect(mocks.log).toHaveBeenCalledWith(
+      'server list https://mods.example/files/servers.json: fetch failed (ECONNRESET)',
+    );
+    mocks.servers.mockResolvedValue([]);
+    await send('SelectServer', { serverId: 'main' });
+    await vi.waitFor(() =>
+      expect(mocks.log).toHaveBeenLastCalledWith('server list: reachable again'),
+    );
   });
   it('offers only the main server in the player build', async () => {
     vi.stubEnv('VITE_PROFILE', 'prod');

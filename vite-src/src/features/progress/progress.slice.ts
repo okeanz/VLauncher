@@ -37,6 +37,8 @@ export const initialState = {
   servers: null as LauncherServer[] | null,
   /** The installer has polled the server list at least once, successfully or not. */
   serversPolled: false,
+  /** Why the last poll of the server list failed, as the installer saw it (also in launcher.log). */
+  serverListError: null as string | null,
   selectedServer: 'main',
   readyServer: '',
   requestedPath: '',
@@ -112,9 +114,18 @@ export const progressSlice = createSlice({
         payload: { gamePath, releaseId, serverId },
       }),
     },
-    setServers(state, action: PayloadAction<LauncherServer[] | null>) {
-      state.servers = action.payload;
-      state.serversPolled = true;
+    setServers: {
+      reducer(
+        state,
+        action: PayloadAction<{ servers: LauncherServer[] | null; error: string | null }>,
+      ) {
+        state.servers = action.payload.servers;
+        state.serverListError = action.payload.servers ? null : action.payload.error;
+        state.serversPolled = true;
+      },
+      prepare: (servers: LauncherServer[] | null, error: string | null = null) => ({
+        payload: { servers, error },
+      }),
     },
     selectServer(state, action: PayloadAction<string>) {
       if (state.selectedServer === action.payload) return;
@@ -184,6 +195,7 @@ export const progressSlice = createSlice({
       serverRelease: state.serverRelease,
       servers: state.servers,
       serversPolled: state.serversPolled,
+      serverListError: state.serverListError,
       selectedServer: state.selectedServer,
     }),
   },

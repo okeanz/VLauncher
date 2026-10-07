@@ -94,7 +94,7 @@ export const registerEvents = async () => {
           syncRelease(data.release ?? null);
         break;
       case 'serverList': {
-        store.dispatch(setServers(data.servers ?? null));
+        store.dispatch(setServers(data.servers ?? null, data.error ?? null));
         const { selectedServer } = store.getState().progress;
         // A deleted test server falls back to the main one.
         if (data.servers && !data.servers.some((s: { id: string }) => s.id === selectedServer))

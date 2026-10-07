@@ -19,6 +19,7 @@ import { sendProgressEvent } from './ws-events/progress-events.js';
 import { receivedPong } from './websocket/heartbeat.js';
 import { shutdown } from './on-exit.js';
 import { setOptimization, getOptimization } from './utils/boot-config.js';
+import { appendLog, describeError } from './utils/file-log.js';
 
 export const dataDirectory = path.join(process.env.LOCALAPPDATA || os.homedir(), 'VLauncher');
 let childRunning = false;
@@ -59,13 +60,22 @@ export const startingPollInterval = 10000;
 let releaseTimer: ReturnType<typeof setInterval> | undefined;
 let startingTimer: ReturnType<typeof setTimeout> | undefined;
 let selectedServer = 'main';
+let serverListError: string | null = null;
+const apiBaseOrNone = () => process.env.VITE_API_URL || '(no update source) ';
 async function pollServers() {
   let servers: LauncherServer[] | null = null;
   try {
     servers = await listServers(AbortSignal.timeout(15000));
+    if (serverListError) void appendLog('server list: reachable again');
+    serverListError = null;
     sendProgressEvent('serverList', { servers });
-  } catch {
-    sendProgressEvent('serverList', { servers: null });
+  } catch (error) {
+    const reason = describeError(error);
+    // One line per change of reason, not one every 30 seconds.
+    if (reason !== serverListError)
+      void appendLog(`server list ${apiBaseOrNone()}files/servers.json: ${reason}`);
+    serverListError = reason;
+    sendProgressEvent('serverList', { servers: null, error: reason });
   }
   await controller.checkRelease(selectedServer);
   const selected = servers?.find((s) => s.id === selectedServer);
@@ -184,6 +194,7 @@ export async function messageHandler(message: MessageEvent) {
       }
     }
   } catch (error) {
+    void appendLog(`operation failed: ${describeError(error)}`);
     sendProgressEvent('operationError', {
       error: error instanceof Error ? error.message : String(error),
     });

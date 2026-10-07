@@ -22,6 +22,7 @@
     "extensions.getStats",
     "events.*",
     "window.move",
+    "window.setSize",
     "window.minimize"
   ],
   "singlePageServe": true,
