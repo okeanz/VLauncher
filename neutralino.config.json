@@ -23,6 +23,7 @@
     "events.*",
     "window.move",
     "window.setSize",
+    "window.getSize",
     "window.minimize"
   ],
   "singlePageServe": true,
