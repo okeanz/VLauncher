@@ -127,6 +127,7 @@ describe('extension commands', () => {
       expect.any(Function),
       'main',
       'build-key',
+      expect.any(Function),
     );
     expect(mocks.notify).toHaveBeenCalledWith('installReady', {
       gamePath: 'C:/Game',

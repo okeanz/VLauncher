@@ -107,6 +107,7 @@ export const controller = new Controller({
       fetch,
       server,
       manifestKey(),
+      (text) => void appendLog(text),
     );
     sendProgressEvent('optimizationReady', {
       gamePath: game,

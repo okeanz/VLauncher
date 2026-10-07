@@ -18,7 +18,11 @@ export type Manifest = Partial<Omit<ReleaseInfo, 'releaseId'>> & {
   schemaVersion: 1;
   releaseId: string;
   archives: { name: string; url: string; sha256: string; size: number }[];
+  /** files.json of the release (kuberheim bucket): every client file with its sha256, for per-file updates. */
+  files?: { url: string; sha256: string; size: number };
 };
+/** One client file: path under the game folder, as the release installs it. */
+export type ReleaseFile = { path: string; sha256: string; size: number };
 const optionalText = (value: unknown, max: number) =>
   typeof value === 'string' && value.length <= max && ![...value].some((c) => c.charCodeAt(0) < 32)
     ? value
@@ -196,6 +200,22 @@ export function validateManifest(value: unknown, base: string): Manifest {
       throw new Error('Archive URL must belong to this immutable release');
     seen.add(a.name);
   }
+  if (m.files !== undefined) {
+    const f = m.files;
+    const url = f && typeof f.url === 'string' ? new URL(f.url, base) : null;
+    if (
+      !url ||
+      url.origin !== new URL(base).origin ||
+      url.search ||
+      url.hash ||
+      url.pathname !== new URL(`files/releases/${m.releaseId}/files.json`, base).pathname ||
+      !/^[a-f0-9]{64}$/.test(f.sha256) ||
+      !Number.isSafeInteger(f.size) ||
+      f.size <= 0 ||
+      f.size > 64 * 1024 ** 2
+    )
+      throw new Error('Invalid file list metadata');
+  }
   // Display-only metadata from older servers may be absent; never let it carry arbitrary data.
   return {
     ...m,
@@ -354,6 +374,11 @@ export async function commitInstall(
   releaseId: string,
   signal?: AbortSignal,
   beforeWrite?: (name: string) => void,
+  /**
+   * The release's files and where each one's bytes are, instead of everything under stage. A file whose source
+   * is its own place in the game folder is already installed and is neither hashed nor written.
+   */
+  source?: { files: string[]; of: (name: string) => string },
 ) {
   await recover(game);
   const dir = await stateDirectory(game);
@@ -363,7 +388,8 @@ export async function commitInstall(
     : { schemaVersion: 1, releaseId: '', files: [] };
   if (previous.schemaVersion !== 1 || !Array.isArray(previous.files))
     throw new Error('Invalid installation record');
-  const files = await listFiles(stage);
+  const files = source ? source.files.map(safeRelative) : await listFiles(stage);
+  const sourceOf = source ? source.of : (name: string) => path.join(stage, name);
   if (!files.some((f) => f.startsWith('BepInEx/core/')) || !files.includes('winhttp.dll'))
     throw new Error('Incomplete Windows BepInEx package');
   // Plugins and patchers mirror the release: a mod the server does not run makes Jotunn refuse
@@ -392,7 +418,7 @@ export async function commitInstall(
     if (
       found &&
       files.includes(name) &&
-      (await hashFile(target)) === (await hashFile(path.join(stage, name)))
+      (sourceOf(name) === target || (await hashFile(target)) === (await hashFile(sourceOf(name))))
     )
       continue;
     if (!found && !files.includes(name)) continue;
@@ -426,7 +452,7 @@ export async function commitInstall(
       const target = path.join(game, name);
       if (files.includes(name)) {
         await fs.mkdir(path.dirname(target), { recursive: true });
-        await replaceFile(path.join(stage, name), target);
+        await replaceFile(sourceOf(name), target);
       } else await fs.rm(target, { force: true });
     }
     await atomicJson(installedPath, { schemaVersion: 1, releaseId, files });
@@ -486,6 +512,66 @@ async function download(url: string, signal: AbortSignal, request: typeof fetch)
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
   return response;
 }
+/** No byte for this long fails a transfer; a slow but moving one runs as long as it needs. */
+export const stallTimeoutMs = 60_000;
+/**
+ * Downloads url into file, checking size and sha256 on the way: the bytes land in file + '.part' and take the
+ * final name only when they match. The server must answer within 120 s; after that only a stall fails the
+ * transfer, so a 1 GB archive gets through a slow line too.
+ */
+export async function downloadTo(
+  url: string,
+  file: string,
+  expected: { size: number; sha256: string },
+  signal: AbortSignal,
+  request: typeof fetch,
+  onBytes: (count: number) => void = () => {},
+  label = 'Download',
+) {
+  signal.throwIfAborted();
+  const limit = new AbortController();
+  let timer = setTimeout(() => limit.abort(new Error('Download timed out')), 120000);
+  timer.unref?.();
+  const rearm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => limit.abort(new Error('Download stalled')), stallTimeoutMs);
+    timer.unref?.();
+  };
+  const partial = file + '.part';
+  try {
+    const response = await request(url, {
+      signal: AbortSignal.any([signal, limit.signal]),
+      redirect: 'error',
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+    if (!response.body) throw new Error('Empty download');
+    rearm();
+    let bytes = 0;
+    const hash = crypto.createHash('sha256');
+    const counter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        rearm();
+        bytes += chunk.length;
+        if (bytes > expected.size) return callback(new Error('Download exceeds declared size'));
+        hash.update(chunk);
+        onBytes(chunk.length);
+        callback(null, chunk);
+      },
+    });
+    await pipeline(Readable.fromWeb(response.body as never), counter, createWriteStream(partial), {
+      signal: AbortSignal.any([signal, limit.signal]),
+    });
+    if (bytes !== expected.size || hash.digest('hex') !== expected.sha256)
+      throw new Error(`${label} checksum or size mismatch`);
+    await fs.rename(partial, file);
+  } catch (error) {
+    await fs.rm(partial, { force: true });
+    throw signal.aborted ? (signal.reason ?? error) : error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 /**
  * Parses a published JSON file. With a public key (the player build) the file must carry a valid ed25519
  * `signature` over the JSON of everything else, as kuberheim's src/signing.mjs writes it: key order survives
@@ -542,6 +628,132 @@ export async function fetchServers(
     Date.parse(response.headers.get('date') ?? ''),
   );
 }
+const fileRoots = /^(BepInEx\/|winhttp\.dll$|doorstop_config\.ini$|\.doorstop_version$)/;
+/** Checks a release's files.json: every path a managed one, no duplicates, sane sizes. */
+export function validateFileList(value: unknown, releaseId: string): ReleaseFile[] {
+  const list = value as { schemaVersion?: number; releaseId?: string; files?: unknown[] };
+  if (list?.schemaVersion !== 1 || list.releaseId !== releaseId || !Array.isArray(list.files))
+    throw new Error('Invalid file list');
+  if (!list.files.length || list.files.length > 100000) throw new Error('Invalid file list');
+  const seen = new Set<string>();
+  let total = 0;
+  return list.files.map((raw) => {
+    const f = raw as ReleaseFile;
+    if (
+      typeof f?.path !== 'string' ||
+      safeRelative(f.path) !== f.path ||
+      !fileRoots.test(f.path) ||
+      seen.has(f.path.toLowerCase()) ||
+      !/^[a-f0-9]{64}$/.test(f.sha256) ||
+      !Number.isSafeInteger(f.size) ||
+      f.size < 0 ||
+      f.size > 512 * 1024 ** 2 ||
+      (total += f.size) > 8 * 1024 ** 3
+    )
+      throw new Error('Invalid file list entry');
+    seen.add(f.path.toLowerCase());
+    return { path: f.path, sha256: f.sha256, size: f.size };
+  });
+}
+/** Parallel object downloads: a release is ~1700 files, mostly small configs. */
+const parallelDownloads = 6;
+async function inParallel<T>(items: T[], worker: (item: T) => Promise<void>, signal: AbortSignal) {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(parallelDownloads, items.length) }, async () => {
+      while (next < items.length) {
+        signal.throwIfAborted();
+        await worker(items[next++]);
+      }
+    }),
+  );
+}
+type HashCache = Record<string, { size: number; mtimeMs: number; sha256: string }>;
+/**
+ * Per-file update: download files.json, see which files the game folder already holds (by sha256, cached against
+ * size and mtime so an unchanged 1 GB modpack is not rehashed every time), fetch only the rest as
+ * files/objects/<sha256>. Returns the plan for commitInstall; nothing in the game folder changes here.
+ */
+async function prepareFiles(
+  game: string,
+  baseUrl: URL,
+  cache: string,
+  manifest: Manifest,
+  signal: AbortSignal,
+  request: typeof fetch,
+  progress: (text: string, done: number, total: number) => void,
+) {
+  const meta = manifest.files!;
+  const listFile = path.join(cache, 'files-' + meta.sha256 + '.json');
+  if (!(await exists(listFile)) || (await hashFile(listFile)) !== meta.sha256)
+    await downloadTo(
+      new URL(meta.url, baseUrl).href,
+      listFile,
+      meta,
+      signal,
+      request,
+      undefined,
+      'File list',
+    );
+  const files = validateFileList(
+    JSON.parse(await fs.readFile(listFile, 'utf8')),
+    manifest.releaseId,
+  );
+  const hashesFile = path.join(cache, 'file-hashes.json');
+  const known: HashCache = await fs
+    .readFile(hashesFile, 'utf8')
+    .then((t) => JSON.parse(t) as HashCache)
+    .catch(() => ({}));
+  const hashes: HashCache = {};
+  const objects = path.join(cache, 'objects');
+  await fs.mkdir(objects, { recursive: true });
+  const sources = new Map<string, string>();
+  const needed = new Map<string, ReleaseFile>();
+  progress('Проверка установленных файлов', 0, 1);
+  for (const f of files) {
+    signal.throwIfAborted();
+    const target = path.join(game, f.path);
+    const stat = await fs.lstat(target).catch(() => null);
+    if (stat?.isFile() && stat.size === f.size) {
+      const key = target.toLowerCase();
+      const cached = known[key];
+      const sha256 =
+        cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs
+          ? cached.sha256
+          : await hashFile(target);
+      hashes[key] = { size: stat.size, mtimeMs: stat.mtimeMs, sha256 };
+      if (sha256 === f.sha256) {
+        sources.set(f.path, target);
+        continue;
+      }
+    }
+    const object = path.join(objects, f.sha256);
+    sources.set(f.path, object);
+    if (!needed.has(f.sha256) && !((await exists(object)) && (await hashFile(object)) === f.sha256))
+      needed.set(f.sha256, f);
+  }
+  const total = [...needed.values()].reduce((sum, f) => sum + f.size, 0);
+  let done = 0;
+  progress(`Скачивание файлов: ${needed.size}`, 0, total);
+  await inParallel(
+    [...needed.values()],
+    (f) =>
+      downloadTo(
+        new URL('files/objects/' + f.sha256, baseUrl).href,
+        path.join(objects, f.sha256),
+        f,
+        signal,
+        request,
+        (count) => {
+          done += count;
+          progress(`Скачивание файлов: ${needed.size}`, done, total);
+        },
+        'File ' + f.path,
+      ),
+    signal,
+  );
+  return { files, sources, hashes, hashesFile, objects, downloaded: total };
+}
 export async function installRelease(
   game: string,
   base: string,
@@ -551,12 +763,65 @@ export async function installRelease(
   request: typeof fetch = fetch,
   server = 'main',
   publicKey?: string,
+  /** Where a fallback from per-file to archive install is noted (launcher.log). */
+  log: (text: string) => void = () => {},
 ) {
   const baseUrl = baseUrlOf(base);
-  const get = (url: string) => download(url, signal, request);
   await recover(game);
   const manifest = await fetchManifest(baseUrl.href, signal, request, server, publicKey);
   await fs.mkdir(cache, { recursive: true });
+  if (manifest.files) {
+    // Per-file first; if anything before the commit fails (an object missing, a broken list), the archives
+    // still install the release. A failure inside the commit is rolled back by it and reported as is.
+    let plan: Awaited<ReturnType<typeof prepareFiles>> | null = null;
+    try {
+      plan = await prepareFiles(
+        game,
+        baseUrl,
+        cache,
+        manifest,
+        signal,
+        request,
+        (text, done, total) =>
+          progress(text, total ? Math.min(95, Math.floor((done / total) * 95)) : 0),
+      );
+    } catch (error) {
+      signal.throwIfAborted();
+      log(
+        `per-file install of ${manifest.releaseId} failed, using archives: ${(error as Error).message}`,
+      );
+    }
+    if (plan) {
+      const { files, sources, hashes, hashesFile, objects } = plan;
+      progress('Установка проверенных файлов', 95);
+      await commitInstall(game, '', manifest.releaseId, signal, undefined, {
+        files: files.map((f) => f.path),
+        of: (name) => sources.get(name)!,
+      });
+      // What is in the game folder now, so the next update does not hash it again.
+      for (const f of files) {
+        const target = path.join(game, f.path);
+        const stat = await fs.stat(target).catch(() => null);
+        if (stat)
+          hashes[target.toLowerCase()] = {
+            size: stat.size,
+            mtimeMs: stat.mtimeMs,
+            sha256: f.sha256,
+          };
+      }
+      await atomicJson(hashesFile, hashes);
+      await fs.rm(objects, { recursive: true, force: true });
+      for (const name of await fs.readdir(cache))
+        if (
+          /^files-[a-f0-9]{64}\.json$/.test(name) &&
+          name !== `files-${manifest.files.sha256}.json`
+        )
+          await fs.rm(path.join(cache, name), { force: true });
+      await pruneCache(cache, server, []);
+      progress('Ревизия ' + manifest.releaseId, 100);
+      return releaseInfo(manifest);
+    }
+  }
   const archives = archiveNames.map((name) => manifest.archives.find((a) => a.name === name)!);
   const cached = async (a: (typeof archives)[number]) => {
     const blob = path.join(cache, a.sha256 + '.zip');
@@ -595,26 +860,18 @@ export async function installRelease(
       const blob = path.join(cache, a.sha256 + '.zip');
       if (missing.has(name)) {
         report('Скачивание ' + name);
-        const r = await get(new URL(a.url, baseUrl).href);
-        if (!r.body) throw new Error('Empty download');
-        let bytes = 0;
-        const counter = new Transform({
-          transform(chunk, _encoding, callback) {
-            bytes += chunk.length;
-            if (bytes <= a.size) {
-              done += chunk.length;
-              report();
-            }
-            callback(bytes > a.size ? new Error('Download exceeds declared size') : null, chunk);
-          },
-        });
-        const partial = path.join(work, name + '.part');
-        await pipeline(Readable.fromWeb(r.body as never), counter, createWriteStream(partial), {
+        await downloadTo(
+          new URL(a.url, baseUrl).href,
+          blob,
+          a,
           signal,
-        });
-        if (bytes !== a.size || (await hashFile(partial)) !== a.sha256)
-          throw new Error('Archive checksum or size mismatch: ' + name);
-        await fs.rename(partial, blob);
+          request,
+          (count) => {
+            done += count;
+            report();
+          },
+          'Archive ' + name,
+        );
       }
       report('Распаковка ' + name);
       await extractSafe(

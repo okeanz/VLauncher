@@ -21,6 +21,8 @@ import {
   exists,
   hashFile,
   listFiles,
+  validateFileList,
+  downloadTo,
 } from '../extension/src/updater';
 import { temporary, removeTemporary, put, release, zipBytes } from './fixtures';
 let dir: string;
@@ -740,5 +742,184 @@ describe('downloads and cache', () => {
         server.close((e) => (e ? reject(e) : resolve())),
       );
     }
+  });
+});
+
+// A release as the kuberheim bucket publishes it: archives, files.json and files/objects/<sha256>.
+function bucketRelease(id: string, plugins: Record<string, string>) {
+  const r = release(id);
+  const content: Record<string, string> = {
+    'BepInEx/core/BepInEx.dll': 'core-' + id,
+    'winhttp.dll': 'loader-' + id,
+    'BepInEx/patchers/patch.dll': 'patch-' + id,
+    'BepInEx/config/mod.cfg': 'config-' + id,
+    ...Object.fromEntries(Object.entries(plugins).map(([n, v]) => ['BepInEx/plugins/' + n, v])),
+  };
+  const sha = (v: string | Buffer) => crypto.createHash('sha256').update(v).digest('hex');
+  // The archives carry the same files, so a fallback installs the same release.
+  r.data.plugins = zipBytes(plugins);
+  r.manifest.archives = r.manifest.archives.map((a) =>
+    a.name === 'plugins' ? { ...a, size: r.data.plugins.length, sha256: sha(r.data.plugins) } : a,
+  );
+  const files = Object.entries(content)
+    .map(([p, v]) => ({ path: p, sha256: sha(v), size: Buffer.byteLength(v) }))
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
+  const list = JSON.stringify({ schemaVersion: 1, releaseId: id, files });
+  r.manifest.files = {
+    url: `files/releases/${id}/files.json`,
+    sha256: sha(list),
+    size: Buffer.byteLength(list),
+  };
+  const objects = new Map(Object.values(content).map((v) => [sha(v), v]));
+  const requested: string[] = [];
+  const missing = new Set<string>();
+  const request = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requested.push(url.replace('https://mods.example/', ''));
+    if (url.endsWith('/launcher-manifest.json')) return Response.json(r.manifest);
+    if (url.endsWith('/files.json')) return new Response(list);
+    const object = /files\/objects\/([a-f0-9]{64})$/.exec(url)?.[1];
+    if (object)
+      return objects.has(object) && !missing.has(object)
+        ? new Response(objects.get(object))
+        : new Response(null, { status: 404 });
+    const entry = r.manifest.archives.find((a) => url.endsWith(a.url));
+    return entry
+      ? new Response(new Uint8Array(r.data[entry.name]))
+      : new Response(null, { status: 404 });
+  }) as typeof fetch;
+  return { ...r, content, files, list, request, requested, missing, sha };
+}
+
+describe('per-file install from the bucket', () => {
+  const signal = () => new AbortController().signal;
+  const base = 'https://mods.example';
+  const installed = async (rel: string) => fs.readFile(path.join(game, rel), 'utf8');
+  const objectsOf = (requested: string[]) =>
+    requested.filter((u) => u.startsWith('files/objects/'));
+  it('installs a fresh game from objects, never touching the archives', async () => {
+    const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1', 'Shared/big.dll': 'shared' });
+    const info = await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    expect(info.releaseId).toBe('r1');
+    for (const [rel, value] of Object.entries(r.content)) expect(await installed(rel)).toBe(value);
+    expect(r.requested.filter((u) => u.endsWith('.zip'))).toEqual([]);
+    expect(objectsOf(r.requested)).toHaveLength(Object.keys(r.content).length);
+    // Downloaded objects are not kept once installed; the hashes of what is installed are.
+    expect(await exists(path.join(cache, 'objects'))).toBe(false);
+    const hashes = JSON.parse(await fs.readFile(path.join(cache, 'file-hashes.json'), 'utf8'));
+    expect(Object.keys(hashes)).toHaveLength(Object.keys(r.content).length);
+  });
+  it('updates by downloading only the changed files and drops what the release no longer has', async () => {
+    const r1 = bucketRelease('r1', {
+      'Mod/mod.dll': 'mod-r1',
+      'Shared/big.dll': 'shared',
+      'Old/old.dll': 'old',
+    });
+    await installRelease(game, base, cache, signal(), undefined, r1.request, 'main');
+    const big = path.join(game, 'BepInEx/plugins/Shared/big.dll');
+    const before = (await fs.stat(big)).mtimeMs;
+    // r2 keeps big.dll, changes mod.dll and the release-specific core files, drops old.dll.
+    const r2 = bucketRelease('r2', { 'Mod/mod.dll': 'mod-r2', 'Shared/big.dll': 'shared' });
+    const progress: number[] = [];
+    await installRelease(
+      game,
+      base,
+      cache,
+      signal(),
+      (_t, p) => progress.push(p),
+      r2.request,
+      'main',
+    );
+    const objects = objectsOf(r2.requested);
+    expect(objects).toHaveLength(5); // mod.dll, core, loader, patch, config: not big.dll
+    expect(objects).not.toContain('files/objects/' + r2.sha('shared'));
+    expect(await installed('BepInEx/plugins/Mod/mod.dll')).toBe('mod-r2');
+    expect((await fs.stat(big)).mtimeMs).toBe(before);
+    expect(await exists(path.join(game, 'BepInEx/plugins/Old/old.dll'))).toBe(false);
+    expect(progress.at(-1)).toBe(100);
+    // Nothing changed: no object is fetched again.
+    r2.requested.length = 0;
+    await installRelease(game, base, cache, signal(), undefined, r2.request, 'main');
+    expect(objectsOf(r2.requested)).toEqual([]);
+  });
+  it('replaces a file the player changed, even with the same size', async () => {
+    const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1' });
+    await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    const mod = path.join(game, 'BepInEx/plugins/Mod/mod.dll');
+    await fs.writeFile(mod, 'MOD-R1');
+    await fs.utimes(mod, new Date(), new Date(Date.now() + 5000));
+    await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    expect(await installed('BepInEx/plugins/Mod/mod.dll')).toBe('mod-r1');
+  });
+  it('falls back to the archives when an object is missing, and says so', async () => {
+    const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1' });
+    r.missing.add(r.sha('mod-r1'));
+    const log = vi.fn();
+    const info = await installRelease(
+      game,
+      base,
+      cache,
+      signal(),
+      undefined,
+      r.request,
+      'main',
+      undefined,
+      log,
+    );
+    expect(info.releaseId).toBe('r1');
+    expect(await installed('BepInEx/plugins/Mod/mod.dll')).toBe('mod-r1');
+    expect(r.requested.filter((u) => u.endsWith('.zip'))).toHaveLength(4);
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /per-file install of r1 failed, using archives: Download failed: HTTP 404/,
+      ),
+    );
+  });
+  it('rejects a file list that does not match the signed manifest or leaves the managed folders', async () => {
+    const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1' });
+    const log = vi.fn();
+    const tampered = (async (input: string | URL | Request) =>
+      String(input).endsWith('/files.json')
+        ? new Response(r.list.replace('mod.dll', 'mad.dll'))
+        : r.request(input)) as typeof fetch;
+    await installRelease(game, base, cache, signal(), undefined, tampered, 'main', undefined, log);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/File list checksum or size mismatch/));
+    const good = { path: 'BepInEx/plugins/a.dll', sha256: 'a'.repeat(64), size: 1 };
+    const list = (files: object[], releaseId = 'r1') => ({ schemaVersion: 1, releaseId, files });
+    expect(validateFileList(list([good]), 'r1')).toEqual([good]);
+    for (const bad of [
+      list([good], 'r2'),
+      list([]),
+      list([{ ...good, path: '../valheim.exe' }]),
+      list([{ ...good, path: 'valheim_Data/Managed/assembly_valheim.dll' }]),
+      list([good, { ...good, path: 'BepInEx/plugins/A.dll' }]),
+      list([{ ...good, sha256: 'x' }]),
+      list([{ ...good, size: -1 }]),
+    ])
+      expect(() => validateFileList(bad, 'r1')).toThrow();
+    const m = r.manifest;
+    const files = m.files!;
+    for (const broken of [
+      { ...files, url: 'files/releases/r2/files.json' },
+      { ...files, url: 'https://evil.example/files/releases/r1/files.json' },
+      { ...files, size: 0 },
+    ])
+      expect(() => validateManifest({ ...m, files: broken }, base + '/')).toThrow(/file list/);
+  });
+  it('checks what it downloads and leaves no partial file behind', async () => {
+    const file = path.join(cache, 'x.bin');
+    await fs.mkdir(cache, { recursive: true });
+    const serve = (body: string) => (async () => new Response(body)) as unknown as typeof fetch;
+    const sha = crypto.createHash('sha256').update('abc').digest('hex');
+    const x = 'https://mods.example/x';
+    await downloadTo(x, file, { size: 3, sha256: sha }, signal(), serve('abc'));
+    expect(await fs.readFile(file, 'utf8')).toBe('abc');
+    await expect(
+      downloadTo(x, file + '2', { size: 3, sha256: sha }, signal(), serve('abd')),
+    ).rejects.toThrow(/checksum/);
+    await expect(
+      downloadTo(x, file + '3', { size: 3, sha256: sha }, signal(), serve('abcd')),
+    ).rejects.toThrow(/exceeds/);
+    expect((await fs.readdir(cache)).sort()).toEqual(['x.bin']);
   });
 });
