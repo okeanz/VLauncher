@@ -37,5 +37,7 @@ await build({
     'process.env.VITE_API_URL': JSON.stringify(url),
     'process.env.VITE_PROFILE': JSON.stringify(profile),
     'process.env.VITE_MANIFEST_KEY': JSON.stringify(manifestKey),
+    // Set by scripts/build-app.mjs; the self-update compares it with launcher.json in the bucket.
+    'process.env.VITE_LAUNCHER_VERSION': JSON.stringify(process.env.VITE_LAUNCHER_VERSION || ''),
   },
 });
