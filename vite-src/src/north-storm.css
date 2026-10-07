@@ -622,3 +622,17 @@ body {
     animation: none;
   }
 }
+.ns-update-button {
+  margin-right: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--ns-ok);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ns-ok);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ns-update-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

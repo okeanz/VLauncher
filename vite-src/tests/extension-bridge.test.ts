@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   execFile: vi.fn(),
   log: vi.fn(async () => {}),
+  prepareLauncher: vi.fn(async (): Promise<{ version: string; folder: string } | null> => null),
+  startApply: vi.fn(),
   servers: vi.fn(
     async (): Promise<MockServer[]> => [
       {
@@ -58,6 +60,11 @@ vi.mock('../extension/src/utils/boot-config', () => ({
 vi.mock('../extension/src/ws-events/progress-events', () => ({ sendProgressEvent: mocks.notify }));
 vi.mock('../extension/src/websocket/heartbeat', () => ({ receivedPong: mocks.pong }));
 vi.mock('../extension/src/on-exit', () => ({ shutdown: mocks.shutdown }));
+vi.mock('../extension/src/self-update', () => ({
+  prepareLauncherUpdate: mocks.prepareLauncher,
+  launcherFolder: async () => 'C:/VLauncher',
+  startApply: mocks.startApply,
+}));
 vi.mock('../extension/src/utils/file-log', () => ({
   appendLog: mocks.log,
   describeError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
@@ -168,6 +175,38 @@ describe('extension commands', () => {
     );
     await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
     expect(mocks.notify).toHaveBeenLastCalledWith('operationError', { error: 'Неверный сервер' });
+  });
+  it('offers a downloaded launcher update and hands over to the new build on request', async () => {
+    const { send } = await fixture();
+    await send('ApplyLauncherUpdate', { appPid: 4242 });
+    expect(mocks.notify).toHaveBeenLastCalledWith('operationError', {
+      error: 'Обновление лаунчера ещё не скачано',
+    });
+    mocks.prepareLauncher.mockResolvedValue({ version: 'v2', folder: 'C:/update/v2/VLauncher' });
+    await send('Hello');
+    await vi.waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith('launcherUpdate', { version: 'v2' }),
+    );
+    await send('ApplyLauncherUpdate', { appPid: 'x' });
+    expect(mocks.notify).toHaveBeenLastCalledWith('operationError', {
+      error: 'Неверный процесс лаунчера',
+    });
+    mocks.execFile.mockImplementationOnce((_f, _a, _o, callback) =>
+      callback(null, { stdout: '"valheim.exe","1"' }),
+    );
+    await send('ApplyLauncherUpdate', { appPid: 4242 });
+    expect(mocks.notify).toHaveBeenLastCalledWith('operationError', {
+      error: 'Закройте игру перед обновлением лаунчера',
+    });
+    expect(mocks.startApply).not.toHaveBeenCalled();
+    await send('ApplyLauncherUpdate', { appPid: 4242 });
+    expect(mocks.startApply).toHaveBeenCalledWith(
+      { version: 'v2', folder: 'C:/update/v2/VLauncher' },
+      'C:/VLauncher',
+      [4242, process.pid],
+    );
+    expect(mocks.notify).toHaveBeenLastCalledWith('launcherUpdateApplying', { version: 'v2' });
+    mocks.prepareLauncher.mockResolvedValue(null);
   });
   it('tells why the server list is unreachable and logs each new reason once', async () => {
     const { send } = await fixture();

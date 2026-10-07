@@ -20,6 +20,7 @@ import { receivedPong } from './websocket/heartbeat.js';
 import { shutdown } from './on-exit.js';
 import { setOptimization, getOptimization } from './utils/boot-config.js';
 import { appendLog, describeError } from './utils/file-log.js';
+import { prepareLauncherUpdate, launcherFolder, startApply } from './self-update.js';
 
 export const dataDirectory = path.join(process.env.LOCALAPPDATA || os.homedir(), 'VLauncher');
 let childRunning = false;
@@ -84,6 +85,35 @@ async function pollServers() {
     startingTimer = setTimeout(() => void pollServers(), startingPollInterval);
     startingTimer.unref();
   }
+}
+/** The launcher update downloaded and ready to apply, if any (player build only). */
+let launcherUpdate: { version: string; folder: string } | null = null;
+export const launcherUpdateInterval = 30 * 60_000;
+let launcherTimer: ReturnType<typeof setInterval> | undefined;
+let checkingLauncher = false;
+export async function checkLauncherUpdate() {
+  if (checkingLauncher) return;
+  checkingLauncher = true;
+  try {
+    launcherUpdate = await prepareLauncherUpdate({
+      base: apiBase(),
+      publicKey: manifestKey(),
+      version: process.env.VITE_LAUNCHER_VERSION || undefined,
+      directory: path.join(dataDirectory, 'launcher-update'),
+      signal: AbortSignal.timeout(30 * 60_000),
+    });
+    if (launcherUpdate) sendProgressEvent('launcherUpdate', { version: launcherUpdate.version });
+  } catch (error) {
+    void appendLog(`launcher update check: ${describeError(error)}`);
+  } finally {
+    checkingLauncher = false;
+  }
+}
+export function watchLauncher() {
+  void checkLauncherUpdate();
+  if (launcherTimer) return;
+  launcherTimer = setInterval(() => void checkLauncherUpdate(), launcherUpdateInterval);
+  launcherTimer.unref();
 }
 export function watchRelease() {
   void pollServers();
@@ -157,6 +187,7 @@ export async function messageHandler(message: MessageEvent) {
     if (event === 'Hello') {
       sendProgressEvent('extensionReady', {});
       watchRelease();
+      watchLauncher();
       return;
     }
     if (event === 'pong') {
@@ -165,6 +196,16 @@ export async function messageHandler(message: MessageEvent) {
     }
     if (event === 'terminate') {
       await shutdown();
+      return;
+    }
+    if (event === 'ApplyLauncherUpdate') {
+      if (!launcherUpdate) throw new Error('Обновление лаунчера ещё не скачано');
+      const appPid = Number(data?.appPid);
+      if (!Number.isInteger(appPid) || appPid <= 0) throw new Error('Неверный процесс лаунчера');
+      if (await gameRunning()) throw new Error('Закройте игру перед обновлением лаунчера');
+      startApply(launcherUpdate, await launcherFolder(), [appPid, process.pid]);
+      void appendLog(`launcher update to ${launcherUpdate.version} started`);
+      sendProgressEvent('launcherUpdateApplying', { version: launcherUpdate.version });
       return;
     }
     if (event === 'SelectServer') {

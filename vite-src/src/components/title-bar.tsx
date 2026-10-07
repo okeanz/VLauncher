@@ -5,6 +5,7 @@ import { ServerCheck } from '@/components/server-check';
 import { ServerSelect } from '@/components/server-select';
 import { serverPicker } from '@/constants/build';
 import { closeLauncher } from '@/events';
+import { LauncherUpdate } from '@/components/launcher-update';
 import logo from '@/assets/north-storm/app-icon-44.png';
 
 /** Title bar of the borderless window: drag handle, brand, statuses and window buttons. */
@@ -25,6 +26,7 @@ export const TitleBar = () => {
       <div className="ns-brand">Loot Goblins Inc</div>
       <div style={{ flexGrow: 1 }} />
       {serverPicker && <ServerSelect />}
+      <LauncherUpdate />
       <ServerCheck />
       <div className="ns-window-buttons">
         <button

@@ -39,6 +39,10 @@ export const initialState = {
   serversPolled: false,
   /** Why the last poll of the server list failed, as the installer saw it (also in launcher.log). */
   serverListError: null as string | null,
+  /** A newer launcher, downloaded and ready to apply (player build only). */
+  launcherUpdate: null as string | null,
+  /** The new launcher is taking over; the window closes. */
+  launcherUpdating: false,
   selectedServer: 'main',
   readyServer: '',
   requestedPath: '',
@@ -127,6 +131,12 @@ export const progressSlice = createSlice({
         payload: { servers, error },
       }),
     },
+    setLauncherUpdate(state, action: PayloadAction<string | null>) {
+      state.launcherUpdate = action.payload;
+    },
+    setLauncherUpdating(state, action: PayloadAction<boolean>) {
+      state.launcherUpdating = action.payload;
+    },
     selectServer(state, action: PayloadAction<string>) {
       if (state.selectedServer === action.payload) return;
       state.selectedServer = action.payload;
@@ -196,6 +206,8 @@ export const progressSlice = createSlice({
       servers: state.servers,
       serversPolled: state.serversPolled,
       serverListError: state.serverListError,
+      launcherUpdate: state.launcherUpdate,
+      launcherUpdating: state.launcherUpdating,
       selectedServer: state.selectedServer,
     }),
   },
@@ -206,6 +218,8 @@ export const {
   installReady,
   setServerRelease,
   setServers,
+  setLauncherUpdate,
+  setLauncherUpdating,
   selectServer,
   updateProgress,
   setError,

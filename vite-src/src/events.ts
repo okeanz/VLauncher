@@ -10,6 +10,8 @@ import {
   setConfiguring,
   setServerRelease,
   setServers,
+  setLauncherUpdate,
+  setLauncherUpdating,
   type ServerRelease,
 } from '@/features/progress/progress.slice';
 import { chooseServer } from '@/shared/actions/choose-server';
@@ -106,6 +108,14 @@ export const registerEvents = async () => {
         break;
       case 'operationError':
         store.dispatch(setError(data.error));
+        store.dispatch(setLauncherUpdating(false));
+        break;
+      case 'launcherUpdate':
+        store.dispatch(setLauncherUpdate(data.version ?? null));
+        break;
+      case 'launcherUpdateApplying':
+        // The new extension waits for this window to close, then swaps the files and starts the launcher.
+        void closeLauncher();
         break;
       case 'gameState':
         store.dispatch(setRunning(data.running));

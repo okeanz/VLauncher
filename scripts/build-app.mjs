@@ -3,9 +3,11 @@
 //   prod — сборка для игроков: только основной сервер, файлы из публичного бакета (vite-src/.env.prod).
 // neu build всегда пишет в dist/VLauncher, поэтому готовые файлы Windows копируются оттуда
 // в dist/VLauncher-<профиль>. .storage (путь к игре, выбранный сервер) в папке профиля сохраняется.
-// Для prod рядом кладётся dist/VLauncher-prod.zip — то, что раздаётся игрокам.
+// Для prod рядом кладётся dist/VLauncher-prod.zip — то, что раздаётся игрокам, и dist/VLauncher-prod.json с версией:
+// её вшивает сборка, а самообновление сравнивает с files/launcher/launcher.json в бакете. Публикует zip
+// kuberheim: node scripts/publish-launcher.mjs (в репозитории kuberheim).
 import { execFileSync, execSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,10 +24,19 @@ delete env.VITE_API_URL;
 delete env.VITE_PROFILE;
 delete env.VITE_SERVER_PICKER;
 delete env.VITE_MANIFEST_KEY;
-const run = (args, cwd = root) => execFileSync(process.execPath, args, { cwd, env, stdio: 'inherit' });
+delete env.VITE_LAUNCHER_VERSION;
 
 execSync('npm run check', { cwd: path.join(root, 'vite-src'), env, stdio: 'inherit' });
-run([path.join(root, 'vite-src/node_modules/@neutralinojs/neu/bin/neu.js'), 'build']);
+// Version: build time and commit, -dirty when the sources differ from it. Any change makes a new version.
+const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '.').slice(0, 15);
+const dirty = git('status', '--porcelain', '--', 'vite-src', 'neutralino.config.json') ? '-dirty' : '';
+const version = `${stamp}-${git('rev-parse', '--short', 'HEAD')}${dirty}`;
+execFileSync(process.execPath, [path.join(root, 'vite-src/node_modules/@neutralinojs/neu/bin/neu.js'), 'build'], {
+  cwd: root,
+  env: { ...env, VITE_LAUNCHER_VERSION: version },
+  stdio: 'inherit',
+});
 
 const built = path.join(root, 'dist/VLauncher');
 const target = path.join(root, `dist/VLauncher-${profile}`);
@@ -43,5 +54,7 @@ if (profile === 'prod') {
   const archive = path.join(root, 'dist/VLauncher-prod.zip');
   rmSync(archive, { force: true });
   zip.writeZip(archive);
-  console.log(`Готово: ${target}, архив для игроков ${archive}`);
+  const info = { version, builtAt: new Date().toISOString() };
+  writeFileSync(path.join(root, 'dist/VLauncher-prod.json'), JSON.stringify(info, null, 2) + '\n');
+  console.log(`Готово: ${target}, архив для игроков ${archive}, версия ${version}`);
 } else console.log(`Готово: ${target}`);

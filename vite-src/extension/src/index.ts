@@ -5,6 +5,8 @@ import { setupWs } from './websocket/setup-ws.js';
 import { acquireLock } from './types/pidlock-promise.js';
 import { shutdown, setLockRelease } from './on-exit.js';
 import { dataDirectory } from './message-handler.js';
+import { applyUpdate } from './self-update.js';
+import { appendLog } from './utils/file-log.js';
 async function start() {
   await fsp.mkdir(dataDirectory, { recursive: true });
   setLockRelease(await acquireLock(path.join(dataDirectory, 'instance.lock')));
@@ -37,7 +39,21 @@ process.on('unhandledRejection', (error) => {
   console.error(error instanceof Error ? error.message : 'Unhandled rejection');
   void shutdown(1);
 });
-start().catch((error) => {
-  console.error(error.message);
-  void shutdown(1);
-});
+// extension.exe --apply-update <new launcher folder> <launcher folder> <pids...>: the new build replacing the old
+// one after it exits (self-update.ts). Neutralino never starts the extension with arguments.
+const apply = process.argv.indexOf('--apply-update');
+if (apply >= 0) {
+  const [from, to, ...pids] = process.argv.slice(apply + 1);
+  void applyUpdate(
+    from,
+    to,
+    pids.map(Number).filter(Number.isInteger),
+    (text) => void appendLog(text),
+  )
+    .catch((error) => appendLog(`launcher update crashed: ${(error as Error).message}`))
+    .finally(() => setTimeout(() => process.exit(0), 500));
+} else
+  start().catch((error) => {
+    console.error(error.message);
+    void shutdown(1);
+  });
