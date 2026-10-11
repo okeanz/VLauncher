@@ -10,6 +10,8 @@ export const archiveNames = ['BepInEx', 'patchers', 'config', 'plugins'] as cons
 export type ReleaseInfo = {
   releaseId: string;
   title: string | null;
+  /** What changed for players, written by the panel on a deploy to main; one point per line. */
+  notes: string | null;
   gameVersion: string | null;
   createdAt: string | null;
   activatedAt: string | null;
@@ -27,9 +29,13 @@ const optionalText = (value: unknown, max: number) =>
   typeof value === 'string' && value.length <= max && ![...value].some((c) => c.charCodeAt(0) < 32)
     ? value
     : null;
+/** Like optionalText, but line breaks are allowed. */
+const optionalLines = (value: unknown, max: number) =>
+  typeof value === 'string' && optionalText(value.replace(/\n/g, ' '), max) !== null ? value : null;
 export const releaseInfo = (m: Manifest): ReleaseInfo => ({
   releaseId: m.releaseId,
   title: m.title ?? null,
+  notes: m.notes ?? null,
   gameVersion: m.gameVersion ?? null,
   createdAt: m.createdAt ?? null,
   activatedAt: m.activatedAt ?? null,
@@ -229,6 +235,7 @@ export function validateManifest(value: unknown, base: string): Manifest {
   return {
     ...m,
     title: optionalText(m.title, 300),
+    notes: optionalLines(m.notes, 2000),
     gameVersion: optionalText(m.gameVersion, 40),
     createdAt: optionalText(m.createdAt, 40),
     activatedAt: optionalText(m.activatedAt, 40),

@@ -3,6 +3,7 @@ import { Controller } from '../extension/src/controller';
 const release = (releaseId: string) => ({
   releaseId,
   title: null,
+  notes: null,
   gameVersion: null,
   createdAt: null,
   activatedAt: null,

@@ -121,6 +121,26 @@ body {
   font-size: 16px;
   line-height: 1.45;
   color: var(--ns-text-soft);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.ns-notes-more {
+  height: 24px;
+  padding: 0;
+  align-self: flex-start;
+}
+.ns-notes {
+  margin: 0;
+  font-family: var(--ns-body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ns-text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 /* ── Строка заголовка окна ─────────────────────────── */

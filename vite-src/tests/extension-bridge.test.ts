@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   install: vi.fn(async () => ({
     releaseId: 'r1',
     title: null,
+    notes: null,
     gameVersion: null,
     createdAt: null,
     activatedAt: null,
@@ -95,6 +96,7 @@ beforeEach(() => {
   mocks.install.mockResolvedValue({
     releaseId: 'r1',
     title: null,
+    notes: null,
     gameVersion: null,
     createdAt: null,
     activatedAt: null,

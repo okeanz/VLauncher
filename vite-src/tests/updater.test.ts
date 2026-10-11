@@ -643,6 +643,7 @@ describe('downloads and cache', () => {
       return Response.json({
         ...(await response.json()),
         title: 'Starblood r8',
+        notes: 'Что нового:\n- Набеги стали короче',
         activatedAt: '2026-09-16T10:00:00.000Z',
         createdAt: { injected: true },
       });
@@ -651,6 +652,7 @@ describe('downloads and cache', () => {
     expect(releaseInfo(m)).toEqual({
       releaseId: 'r1',
       title: 'Starblood r8',
+      notes: 'Что нового:\n- Набеги стали короче',
       gameVersion: null,
       createdAt: null,
       activatedAt: '2026-09-16T10:00:00.000Z',

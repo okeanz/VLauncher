@@ -56,6 +56,7 @@ import { registerEvents } from '../src/events';
 const r1 = {
   releaseId: 'r1',
   title: 'Test',
+  notes: null,
   gameVersion: null,
   createdAt: null,
   activatedAt: null,

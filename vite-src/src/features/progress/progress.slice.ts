@@ -2,6 +2,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 export type ServerRelease = {
   releaseId: string;
   title: string | null;
+  notes: string | null;
   gameVersion: string | null;
   createdAt: string | null;
   activatedAt: string | null;

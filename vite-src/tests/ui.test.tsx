@@ -24,6 +24,7 @@ import { ValheimOptimization } from '../src/components/valheim-optimization';
 import { LoadingBar } from '../src/components/loading-bar';
 import { ServerSelect } from '../src/components/server-select';
 import { VoyageBar } from '../src/components/voyage-bar';
+import { Hero } from '../src/components/hero';
 import {
   updateProgress,
   beginInstall,
@@ -79,6 +80,7 @@ beforeEach(() => {
     setServerRelease({
       releaseId: 'localmods-1-0-12-r8',
       title: 'Starblood Ascension 0.1.0',
+      notes: null,
       gameVersion: '1.0.12',
       createdAt: null,
       activatedAt: null,
@@ -278,6 +280,50 @@ it('sails the drakkar to the reported install percent', () => {
   });
   expect(screen.queryByRole('progressbar')).toBeNull();
   expect(screen.getByText('Совпадает с сервером')).toBeTruthy();
+});
+it('shows the update description cut to the scene and whole behind «Посмотреть целиком»', async () => {
+  const hero = () =>
+    render(
+      <Provider store={store}>
+        <MantineProvider>
+          <Hero />
+        </MantineProvider>
+      </Provider>,
+    );
+  // No description: the release title, and nothing to unfold while it fits.
+  const first = hero();
+  expect(screen.getByText('Starblood Ascension 0.1.0')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Посмотреть целиком' })).toBeNull();
+  first.unmount();
+  // jsdom has no layout: say the text is taller than its box.
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(93);
+  const notes = 'Что нового:\n- Набеги стали короче\n- Громкость в настройках как в игре';
+  store.dispatch(
+    setServerRelease({
+      releaseId: 'modpack-1-0-17-r140',
+      title: 'Обновление от 12.10',
+      notes,
+      gameVersion: '1.0.17',
+      createdAt: null,
+      activatedAt: null,
+    }),
+  );
+  hero();
+  expect(screen.queryByText('Обновление от 12.10')).toBeNull();
+  const shown = (text: string) =>
+    screen.getAllByText((_, el) => el?.tagName === 'P' && el.textContent === text).length;
+  expect(shown(notes)).toBe(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Посмотреть целиком' }));
+  await waitFor(() => expect(shown(notes)).toBe(2));
+  // The window closes by its button and by the cross.
+  fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }));
+  await waitFor(() => expect(shown(notes)).toBe(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Посмотреть целиком' }));
+  await waitFor(() => expect(shown(notes)).toBe(2));
+  fireEvent.click(document.querySelector('.mantine-Modal-close')!);
+  await waitFor(() => expect(shown(notes)).toBe(1));
+  vi.restoreAllMocks();
 });
 it('asks for the game folder when none is found', () => {
   store.dispatch(setValheimPath.fulfilled({ path: '', isValid: false }, 'test', ''));
