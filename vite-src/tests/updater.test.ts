@@ -23,6 +23,7 @@ import {
   listFiles,
   validateFileList,
   downloadTo,
+  switchDoorstop,
 } from '../extension/src/updater';
 import { temporary, removeTemporary, put, release, zipBytes } from './fixtures';
 let dir: string;
@@ -178,6 +179,20 @@ describe('transactional installation', () => {
     await commitInstall(game, stage, 'r1');
     expect(await fs.readdir(state)).toEqual(backups);
     expect((await fs.stat(path.join(game, 'winhttp.dll'))).mtimeMs).toBe(modified);
+  });
+  it('installs the Doorstop config switched off, so the game outside the launcher stays vanilla', async () => {
+    const released =
+      '[General]\r\nenabled = true\r\ntarget_assembly=x.dll\r\ndebug_enabled = true\r\n';
+    await put(stage, 'doorstop_config.ini', released);
+    // A game the previous launcher left with Doorstop on.
+    await put(game, 'doorstop_config.ini', released);
+    await commitInstall(game, stage, 'r1');
+    const config = path.join(game, 'doorstop_config.ini');
+    expect(await fs.readFile(config, 'utf8')).toBe(released.replace('= true', '= false'));
+    expect(switchDoorstop(await fs.readFile(config, 'utf8'), true)).toBe(released);
+    const state = await fs.readdir(path.join(game, '.vlauncher'));
+    await commitInstall(game, stage, 'r1');
+    expect(await fs.readdir(path.join(game, '.vlauncher'))).toEqual(state);
   });
   it('backs up existing installation and removes mods the server does not run', async () => {
     await put(game, 'BepInEx/core/BepInEx.dll', 'old-core');
@@ -746,13 +761,18 @@ describe('downloads and cache', () => {
 });
 
 // A release as the kuberheim bucket publishes it: archives, files.json and files/objects/<sha256>.
-function bucketRelease(id: string, plugins: Record<string, string>) {
+function bucketRelease(
+  id: string,
+  plugins: Record<string, string>,
+  root: Record<string, string> = {},
+) {
   const r = release(id);
   const content: Record<string, string> = {
     'BepInEx/core/BepInEx.dll': 'core-' + id,
     'winhttp.dll': 'loader-' + id,
     'BepInEx/patchers/patch.dll': 'patch-' + id,
     'BepInEx/config/mod.cfg': 'config-' + id,
+    ...root,
     ...Object.fromEntries(Object.entries(plugins).map(([n, v]) => ['BepInEx/plugins/' + n, v])),
   };
   const sha = (v: string | Buffer) => crypto.createHash('sha256').update(v).digest('hex');
@@ -841,6 +861,20 @@ describe('per-file install from the bucket', () => {
     r2.requested.length = 0;
     await installRelease(game, base, cache, signal(), undefined, r2.request, 'main');
     expect(objectsOf(r2.requested)).toEqual([]);
+  });
+  it('keeps the Doorstop config switched off without fetching it again', async () => {
+    const released = '[General]\nenabled = true\n';
+    const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1' }, { 'doorstop_config.ini': released });
+    await put(game, 'doorstop_config.ini', released);
+    await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    expect(await installed('doorstop_config.ini')).toBe('[General]\nenabled = false\n');
+    r.requested.length = 0;
+    await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    expect(objectsOf(r.requested)).toEqual([]);
+    // Switched on by hand: put back off.
+    await put(game, 'doorstop_config.ini', released);
+    await installRelease(game, base, cache, signal(), undefined, r.request, 'main');
+    expect(await installed('doorstop_config.ini')).toBe('[General]\nenabled = false\n');
   });
   it('replaces a file the player changed, even with the same size', async () => {
     const r = bucketRelease('r1', { 'Mod/mod.dll': 'mod-r1' });

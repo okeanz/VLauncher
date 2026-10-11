@@ -28,8 +28,7 @@ export async function setOptimization(game: string, enabled: boolean) {
   const content = await fs.readFile(file, 'utf8');
   // Steam rewrites boot.config on every game update. When our settings are gone,
   // the file is a fresh original and the old backup no longer describes it.
-  if (!hasSettings(content) && (await exists(backup)))
-    await fs.unlink(backup);
+  if (!hasSettings(content) && (await exists(backup))) await fs.unlink(backup);
   const apply = (original: string) => {
     const keys = new Set(settings.map((line) => line.split('=')[0]));
     const newline = original.includes('\r\n') ? '\r\n' : '\n';

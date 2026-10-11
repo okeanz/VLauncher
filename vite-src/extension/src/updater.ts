@@ -129,6 +129,15 @@ export const visibleServers = (servers: LauncherServer[], profile: string | unde
   profile === 'prod' ? servers.filter((s) => s.id === 'main') : servers;
 const roots = new Set(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']);
 const mirroredRoots = ['BepInEx/plugins', 'BepInEx/patchers'];
+// Doorstop (winhttp.dll) loads BepInEx only when its config or the command line says so. The launcher
+// installs the config switched off and starts the game with doorstopArguments, so Valheim started from
+// Steam stays vanilla while the modpack sits in the game folder.
+export const doorstopConfig = 'doorstop_config.ini';
+export const doorstopArguments = ['--doorstop-enabled', 'true'];
+/** The release's Doorstop config with only the value of `enabled` changed. */
+export const switchDoorstop = (text: string, enabled: boolean) =>
+  text.replace(/^([ \t]*enabled[ \t]*=[ \t]*).*$/im, '$1' + enabled);
+const sha256Of = (text: string) => crypto.createHash('sha256').update(text).digest('hex');
 // Config directories owned by the release. The mods behind them read every yml in their directory
 // (WackysDatabase, EpicLoot, ValheimEnchantmentSystem) or ship data the modpack tunes as a whole
 // (_RelicHeimFiles, TherzieTranslations), so a file left over from another build or dropped in by
@@ -389,7 +398,19 @@ export async function commitInstall(
   if (previous.schemaVersion !== 1 || !Array.isArray(previous.files))
     throw new Error('Invalid installation record');
   const files = source ? source.files.map(safeRelative) : await listFiles(stage);
-  const sourceOf = source ? source.of : (name: string) => path.join(stage, name);
+  let sourceOf = source ? source.of : (name: string) => path.join(stage, name);
+  if (
+    files.includes(doorstopConfig) &&
+    sourceOf(doorstopConfig) !== path.join(game, doorstopConfig)
+  ) {
+    const off = path.join(dir, doorstopConfig);
+    await fs.writeFile(
+      off,
+      switchDoorstop(await fs.readFile(sourceOf(doorstopConfig), 'utf8'), false),
+    );
+    const released = sourceOf;
+    sourceOf = (name) => (name === doorstopConfig ? off : released(name));
+  }
   if (!files.some((f) => f.startsWith('BepInEx/core/')) || !files.includes('winhttp.dll'))
     throw new Error('Incomplete Windows BepInEx package');
   // Plugins and patchers mirror the release: a mod the server does not run makes Jotunn refuse
@@ -714,7 +735,18 @@ async function prepareFiles(
     signal.throwIfAborted();
     const target = path.join(game, f.path);
     const stat = await fs.lstat(target).catch(() => null);
-    if (stat?.isFile() && stat.size === f.size) {
+    if (f.path === doorstopConfig) {
+      // Installed switched off, so it never matches the release byte for byte: compare it switched back.
+      const text = stat?.isFile() ? await fs.readFile(target, 'utf8') : null;
+      if (
+        text !== null &&
+        switchDoorstop(text, false) === text &&
+        [text, switchDoorstop(text, true)].some((t) => sha256Of(t) === f.sha256)
+      ) {
+        sources.set(f.path, target);
+        continue;
+      }
+    } else if (stat?.isFile() && stat.size === f.size) {
       const key = target.toLowerCase();
       const cached = known[key];
       const sha256 =
@@ -802,7 +834,7 @@ export async function installRelease(
       for (const f of files) {
         const target = path.join(game, f.path);
         const stat = await fs.stat(target).catch(() => null);
-        if (stat)
+        if (stat && f.path !== doorstopConfig)
           hashes[target.toLowerCase()] = {
             size: stat.size,
             mtimeMs: stat.mtimeMs,

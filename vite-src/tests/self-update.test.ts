@@ -7,6 +7,7 @@ import {
   applyUpdate,
   launcherFiles,
   launcherFolder,
+  firstAttempt,
   prepareLauncherUpdate,
   validateLauncherInfo,
 } from '../extension/src/self-update';
@@ -166,6 +167,12 @@ describe('launcher self-update', () => {
         request: none,
       }),
     ).toBeNull();
+  });
+  it('allows one automatic attempt per version', async () => {
+    const marker = path.join(dir, 'launcher-update-attempt');
+    expect(await firstAttempt(marker, 'v2')).toBe(true);
+    expect(await firstAttempt(marker, 'v2')).toBe(false);
+    expect(await firstAttempt(marker, 'v3')).toBe(true);
   });
   it('swaps the files and starts the launcher; a failed swap keeps the old version whole', async () => {
     const app = path.join(dir, 'app'),

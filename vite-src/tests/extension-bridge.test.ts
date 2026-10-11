@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   log: vi.fn(async () => {}),
   prepareLauncher: vi.fn(async (): Promise<{ version: string; folder: string } | null> => null),
   startApply: vi.fn(),
+  firstAttempt: vi.fn(async () => true),
   servers: vi.fn(
     async (): Promise<MockServer[]> => [
       {
@@ -46,6 +47,7 @@ vi.mock('../extension/src/updater', () => ({
   fetchManifest: mocks.install,
   fetchServers: mocks.servers,
   releaseInfo: (m: unknown) => m,
+  doorstopArguments: ['--doorstop-enabled', 'true'],
   serverReady: (s: { running: boolean | null; state?: string | null }) =>
     s.state ? s.state === 'ready' : s.running !== false,
   validServerId: (id: unknown) =>
@@ -64,6 +66,7 @@ vi.mock('../extension/src/self-update', () => ({
   prepareLauncherUpdate: mocks.prepareLauncher,
   launcherFolder: async () => 'C:/VLauncher',
   startApply: mocks.startApply,
+  firstAttempt: mocks.firstAttempt,
 }));
 vi.mock('../extension/src/utils/file-log', () => ({
   appendLog: mocks.log,
@@ -170,7 +173,7 @@ describe('extension commands', () => {
     await send('LaunchGame', { valheimPath: 'C:/Game', serverId: test.id });
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/valheim.exe$/),
-      ['+connect', '192.168.50.181:2458'],
+      ['--doorstop-enabled', 'true', '+connect', '192.168.50.181:2458'],
       expect.objectContaining({ shell: false }),
     );
     await send('LoadFiles', { valheimPath: 'C:/Game', serverId: '../main' });
@@ -206,6 +209,51 @@ describe('extension commands', () => {
       [4242, process.pid],
     );
     expect(mocks.notify).toHaveBeenLastCalledWith('launcherUpdateApplying', { version: 'v2' });
+    mocks.prepareLauncher.mockResolvedValue(null);
+  });
+  it('applies the launcher update found at start without asking, once per version', async () => {
+    mocks.prepareLauncher.mockResolvedValue({ version: 'v2', folder: 'C:/update/v2/VLauncher' });
+    const first = await fixture();
+    await first.send('Hello', { appPid: 4242 });
+    await vi.waitFor(() =>
+      expect(mocks.startApply).toHaveBeenCalledWith(
+        { version: 'v2', folder: 'C:/update/v2/VLauncher' },
+        'C:/VLauncher',
+        [4242, process.pid],
+      ),
+    );
+    expect(mocks.firstAttempt).toHaveBeenCalledWith(
+      expect.stringMatching(/launcher-update-attempt$/),
+      'v2',
+    );
+    expect(mocks.notify).toHaveBeenLastCalledWith('launcherUpdateApplying', { version: 'v2' });
+    // The button pressed while the hand-over is under way does not start a second one.
+    await first.send('ApplyLauncherUpdate', { appPid: 4242 });
+    expect(mocks.startApply).toHaveBeenCalledTimes(1);
+    // The same version failed to apply before: the button is offered, the launcher is not restarted again.
+    mocks.startApply.mockClear();
+    mocks.notify.mockClear();
+    mocks.firstAttempt.mockResolvedValue(false);
+    const second = await fixture();
+    await second.send('Hello', { appPid: 4242 });
+    await vi.waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith('launcherUpdate', { version: 'v2' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.startApply).not.toHaveBeenCalled();
+    // A running game holds the update back as well.
+    mocks.firstAttempt.mockResolvedValue(true);
+    mocks.notify.mockClear();
+    mocks.execFile.mockImplementation((_f, _a, _o, callback) =>
+      callback(null, { stdout: '"valheim.exe","1"' }),
+    );
+    const third = await fixture();
+    await third.send('Hello', { appPid: 4242 });
+    await vi.waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith('launcherUpdate', { version: 'v2' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.startApply).not.toHaveBeenCalled();
     mocks.prepareLauncher.mockResolvedValue(null);
   });
   it('tells why the server list is unreachable and logs each new reason once', async () => {
@@ -354,7 +402,7 @@ describe('extension commands', () => {
     await send('LaunchGame', { valheimPath: 'C:/Game & mods' });
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/Game & mods[\\/]valheim.exe$/),
-      [],
+      ['--doorstop-enabled', 'true'],
       expect.objectContaining({ shell: false, cwd: 'C:/Game & mods', stdio: 'ignore' }),
     );
     expect(await gameRunning()).toBe(true);

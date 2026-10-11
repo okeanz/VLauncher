@@ -150,7 +150,9 @@ export const registerEvents = async () => {
         );
         return;
       }
-      void extensions.dispatch('fileLoader', 'Hello').catch(() => {});
+      void extensions
+        .dispatch('fileLoader', 'Hello', { appPid: Number(window.NL_PID) })
+        .catch(() => {});
     };
     helloTimer = setInterval(hello, 1000);
     hello();

@@ -13,6 +13,7 @@ import {
   serverReady,
   validServerId,
   visibleServers,
+  doorstopArguments,
   type LauncherServer,
 } from './updater.js';
 import { sendProgressEvent } from './ws-events/progress-events.js';
@@ -20,7 +21,7 @@ import { receivedPong } from './websocket/heartbeat.js';
 import { shutdown } from './on-exit.js';
 import { setOptimization, getOptimization } from './utils/boot-config.js';
 import { appendLog, describeError } from './utils/file-log.js';
-import { prepareLauncherUpdate, launcherFolder, startApply } from './self-update.js';
+import { prepareLauncherUpdate, launcherFolder, startApply, firstAttempt } from './self-update.js';
 
 export const dataDirectory = path.join(process.env.LOCALAPPDATA || os.homedir(), 'VLauncher');
 let childRunning = false;
@@ -91,9 +92,37 @@ let launcherUpdate: { version: string; folder: string } | null = null;
 export const launcherUpdateInterval = 30 * 60_000;
 let launcherTimer: ReturnType<typeof setInterval> | undefined;
 let checkingLauncher = false;
+/** The launcher window's process, from its first Hello: who to wait for when an update is applied at start. */
+let windowPid: number | null = null;
+let checkedAtStart = false;
+let applying = false;
+async function applyLauncherUpdate(appPid: number) {
+  if (!launcherUpdate || applying) return;
+  applying = true;
+  try {
+    startApply(launcherUpdate, await launcherFolder(), [appPid, process.pid]);
+  } catch (error) {
+    applying = false;
+    throw error;
+  }
+  void appendLog(`launcher update to ${launcherUpdate.version} started`);
+  sendProgressEvent('launcherUpdateApplying', { version: launcherUpdate.version });
+}
+/**
+ * The update found by the check at start is applied without asking, after the install the window may have
+ * begun and never under a running game. Updates found later in the session wait for the button.
+ */
+async function applyAtStart(appPid: number) {
+  await controller.idle();
+  if (!launcherUpdate || controller.active || (await gameRunning())) return;
+  const marker = path.join(dataDirectory, 'launcher-update-attempt');
+  if (!(await firstAttempt(marker, launcherUpdate.version))) return;
+  await applyLauncherUpdate(appPid);
+}
 export async function checkLauncherUpdate() {
   if (checkingLauncher) return;
   checkingLauncher = true;
+  const atStart = !checkedAtStart;
   try {
     launcherUpdate = await prepareLauncherUpdate({
       base: apiBase(),
@@ -103,9 +132,11 @@ export async function checkLauncherUpdate() {
       signal: AbortSignal.timeout(30 * 60_000),
     });
     if (launcherUpdate) sendProgressEvent('launcherUpdate', { version: launcherUpdate.version });
+    if (launcherUpdate && atStart && windowPid) await applyAtStart(windowPid);
   } catch (error) {
     void appendLog(`launcher update check: ${describeError(error)}`);
   } finally {
+    checkedAtStart = true;
     checkingLauncher = false;
   }
 }
@@ -159,7 +190,7 @@ export const controller = new Controller({
           : `Сервер «${server.name}» не отвечает`,
       );
     // Valheim joins host:port passed as +connect right after the main menu loads.
-    const args = server.address ? ['+connect', server.address] : [];
+    const args = [...doorstopArguments, ...(server.address ? ['+connect', server.address] : [])];
     await new Promise<void>((resolve, reject) => {
       const child = spawn(path.join(game, 'valheim.exe'), args, {
         cwd: game,
@@ -186,6 +217,8 @@ export async function messageHandler(message: MessageEvent) {
     const { event, data } = JSON.parse(String(message.data));
     if (event === 'Hello') {
       sendProgressEvent('extensionReady', {});
+      const appPid = Number(data?.appPid);
+      if (Number.isInteger(appPid) && appPid > 0) windowPid ??= appPid;
       watchRelease();
       watchLauncher();
       return;
@@ -203,9 +236,7 @@ export async function messageHandler(message: MessageEvent) {
       const appPid = Number(data?.appPid);
       if (!Number.isInteger(appPid) || appPid <= 0) throw new Error('Неверный процесс лаунчера');
       if (await gameRunning()) throw new Error('Закройте игру перед обновлением лаунчера');
-      startApply(launcherUpdate, await launcherFolder(), [appPid, process.pid]);
-      void appendLog(`launcher update to ${launcherUpdate.version} started`);
-      sendProgressEvent('launcherUpdateApplying', { version: launcherUpdate.version });
+      await applyLauncherUpdate(appPid);
       return;
     }
     if (event === 'SelectServer') {

@@ -98,6 +98,10 @@ export class Controller {
     this.aborter?.abort();
     await this.pending;
   }
+  /** Resolves once no operation is running. */
+  async idle() {
+    while (this.busy) await this.pending;
+  }
   get active() {
     return this.busy;
   }

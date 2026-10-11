@@ -73,6 +73,16 @@ export async function prepareLauncherUpdate(options: {
   return { version: info.version, folder };
 }
 
+/**
+ * True once per version, remembered in the marker file. An update applied without asking restarts the launcher,
+ * so a version that fails to apply must not be tried again on every start: the button stays for it.
+ */
+export async function firstAttempt(marker: string, version: string) {
+  if ((await fs.readFile(marker, 'utf8').catch(() => '')) === version) return false;
+  await fs.writeFile(marker, version);
+  return true;
+}
+
 /** The launcher folder this extension runs from: <launcher>/extensions/extension.exe. */
 export async function launcherFolder(execPath = process.execPath) {
   const folder = path.dirname(path.dirname(execPath));
